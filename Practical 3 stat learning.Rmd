@@ -1,0 +1,952 @@
+---
+title: 'Assessed Practical I: Predicting the Olympic Games'
+author: "Hazel.A.Fernando - 201202015"
+#date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+  word_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+This report will use R to assess how the number of 2012 Olympic medals
+won by a country can be predicted using the country's population and
+Gross Domestic Product (GDP), whilst scrutinising the reliability of
+these predictive relationships.
+
+The data provided contains the following information for 71 countries:
+
+-   Country name
+
+-   Population
+
+-   GDP (in billions of US dollars)
+
+-   Medals won in Beijing 2008, London 2012, and Rio 2016
+
+The sample size is considerably small as only countries that have won at
+least one gold medal in each of the three listed Olympic Games have been
+included.
+
+ 
+
+Calling the dataset into R.
+
+```{r}
+data = read.csv("medal_pop_gdp_data_statlearn.csv")
+```
+
+The data is first pre-processed to remove countries with missing values
+or duplicated countries as these could skew and affect later statistical
+analysis. The data is also examined to see if there are any negative
+values as there should not be any present in this kind of dataset.
+
+```{r}
+summary(is.na(data))
+which(duplicated(data$Country))
+which(data < 0)
+nrow(data)
+```
+
+There are no missing values or duplicated countries. There are also no
+non-positive values. The sample size is correct.
+
+Objects are created for the Population, GDP and Medal Counts from the
+2012 Olympic Games.
+
+```{r}
+population = data$Population
+
+GDP = data$GDP
+
+medal_count_2012 = data$Medal2012
+```
+
+The data is then evaluated to assess patterns and relationships between
+the inputs (Population and GDP) and output (2012 Medal Counts), which
+may help in the decision of which model to fit.
+
+```{r, echo=FALSE}
+hist(medal_count_2012, 
+     breaks = 15,
+     xlab = "2012 Olympic Medal Count",
+      main = "Distribution of 2012 Medal Counts",
+     col = "blue4")
+grid()
+```
+
+**Figure 1: Distribution of 2012 Medal Counts** 
+Histogram of the 2012 Medal Counts showing its distribution.
+
+```{r,echo=FALSE}
+hist(population,
+     breaks = 20,
+     main = "Distribution of Population",
+     xlab = "Population",
+     col = "red4")
+grid()
+```
+
+**Figure 2: Distribution of Population** 
+Histogram of the Population showing its distribution.
+
+```{r,echo=FALSE}
+hist(GDP,
+     breaks = 20,
+     main = "Distribution of GDP",
+     xlab = "GDP (billion US Dollars)",
+     col = "gold2")
+grid()
+```
+
+**Figure 3: Distribution of GDP** 
+Histogram of GDP showing its distribution.
+
+&nbsp;
+
+Both the inputs (Figure 2, Figure 3) and the output (Figure 1) are
+positively skewed, therefore not normally distributed and with possible
+outliers. In general, the relationships appear to show that the more
+wealthy and more populated a country is, the more medals that nation is
+likely to receive.
+
+```{r, echo=FALSE}
+
+plot(population, medal_count_2012,
+     main = "Population vs 2012 Medal Count",
+     xlab = "Population",
+     ylab = "2012 Medal Count",
+     col = "goldenrod2", pch = 1 )
+grid()
+```
+
+**Figure 4: Population vs 2012 Medal Count** 
+Plot of the 2012 MedalCounts vs Population showing their relationship.
+
+```{r,echo=FALSE}
+plot(GDP, medal_count_2012,
+     main = "GDP vs 2012 Medal Count",
+     xlab = "GDP (billion US Dollars)",
+     ylab = "2012 Medal Count",
+     col = "orangered3", pch = 1 )
+grid()
+```
+
+**Figure 5: GDP vs 2012 Medal Count** 
+Plot of the 2012 Medal Counts vs GDP showing their relationship.
+
+&nbsp;
+
+The relationship between 2012 Medal Counts and Population (Figure 4) or
+GDP (Figure 5) are not very linear, although the correlation between
+2012 Medal Counts and GDP is stronger than between 2012 Medal Counts and
+Population.
+
+The median, mean, variance, standard deviation (SD) and the range of the 2012
+Medal Counts are also examined.
+
+```{r,echo=FALSE}
+data_medals = data.frame(c(median(medal_count_2012),
+                           mean(medal_count_2012), var(medal_count_2012), 
+                           sd(medal_count_2012), min(medal_count_2012),
+                           max(medal_count_2012))) 
+
+row.names(data_medals) = c("Median","Mean", "Variance", "Standard Deviation", 
+                           "Min value", "Max value")
+colnames(data_medals) = c("2012 Medal Counts")
+
+data_medals = t(data_medals)
+
+data_medals
+```
+
+**Table 1: 2012 Medal Counts data** 
+Table containing exploratory information about the 2012 Medal Counts data, 
+including the median, mean,variance, standard deviation (SD) and the minimum and 
+maximum medal counts.
+
+&nbsp;
+
+
+# Tasks
+
+## 1.
+
+First, a standard, Gaussian Linear regression (LR) model is fitted to
+the data using the *glm* function to create the LR model; the Population
+and GDP are used as inputs and the 2012 Medal Counts as outputs.
+
+```{r}
+linear_model = glm(medal_count_2012 ~ population + GDP, data=data)
+
+summary(linear_model)
+```
+&nbsp;
+
+The Linear regression model's coefficients are:
+
+```{r,echo=FALSE}
+coefficients_linear = coef(linear_model)
+
+print(coefficients_linear)
+```
+
+ 
+
+## 2.
+
+The second task asks for the 2012 Medal Counts to be log-transformed.
+The modelling using the LR model is repeated but with the output
+log-transformed.
+
+```{r}
+log_medal_count_2012 = log(medal_count_2012)
+
+log_model = glm(log_medal_count_2012 ~ population + GDP, data=data)
+
+summary(log_model)
+```
+&nbsp;
+
+The Log-Transformed Linear (LTL) regression model's coefficients are:
+
+```{r, echo=FALSE}
+coefficients_log = coef(log_model)
+
+print(coefficients_log)
+```
+
+ 
+
+The reasons and benefits in log-transforming the outputs are:
+
+-   It normalises the data (Figure 6), so a better linear model can be
+    fitted even if the data is skewed. A linear regression model is
+    better fitted if the data is more normally distributed.
+
+-   Log-transforming the outputs of the model helps make the
+    relationship between input and output variables more linear, the
+    changes in the outputs is more proportional to the changes in the
+    inputs. This makes it easier to interpret the coefficients.
+
+-   The transformation compresses the output scale, this reduces the
+    effects of larger values and amplifies smaller changes. This
+    mitigates the effects of outliers and helps stablise the variance.
+
+```{r, echo=FALSE}
+hist(log_medal_count_2012, 
+     breaks = 15,
+     xlab = "Log-Transformed 2012 Olympic Medal Count",
+      main = "Distribution of Log-Transformed 2012 Medal Counts",
+     col = "darkgoldenrod2")
+grid()
+```
+
+**Figure 6: Distribution of Log-Transformed 2012 Medal Counts**
+Histogram of 2012 Medal Counts were log-transformed. Compared to Figure 1, 
+the medal counts now look more
+normalised.
+
+ 
+
+## 3.  
+
+The output data exhibit some properties that help in the determination
+of the model to fit. These are:
+
+-   Numerical
+
+-   Non-negative or zero
+
+-   Count data, therefore it's discrete
+
+-   Appears none normally distributed
+
+-   Variance is larger than the mean
+
+-   Median and mean are not equal
+
+A Poisson regression model or Negative Binomial (NB) regression model is
+appropriate to use for this dataset as these models are used when the
+output variables are count data that occur over a fixed interval of
+time, such as the number of models a country wins over a course of an
+Olympic Game.
+
+The benefits of the Poisson or NB regression models over the LR model is
+it better accounts for the properties of the outputs. Using a (Gaussian)
+linear regression model assumes the outputs are continuous and normally
+distributed which count outputs are not. Also, the LR model assumes
+there is a linear relationship between the inputs (population and GDP)
+and outputs (medals won in the 2012 Olympics). This assumption may
+affect how accurate the modelling can be. Both the Poisson and NB models
+are also less sensitive to outliers, and the coefficients from these
+models can be interpreted directly as the effect of the inputs on the
+predicted output, making for better interpretability.
+An unmatched median and mean, suggests skewness (Table 1), and the Poisson or
+NB models better accommodate this than the linear models. 
+
+The benefits of the Log-Transformed Linear (LTL) regression model over
+the LR model is that the logarithmic transformation of the output
+accounts for output variables that are non-normal or for inconsistencies
+in the variances across different values of the input variables. Using
+the LTL model would provide more reliable and readable results. Both the
+LTL model and the Poisson/NB models take into account the possible
+skewness and better represents the relationship of the inputs and
+outputs. However, the LTL model still assumes the output variables are
+continuous and thus a Poisson or NB model might be better suited than
+LTL regression modelling to model the data.
+
+Both Poisson and NB regression models the data in a similar fashion.
+However, the Poisson model is fitted against a logarithmic scale, this
+ensures the outputs remains as non-negative values, whereas the NB model
+does not. On the otherhand, the NB model does not assume the mean and
+variance of the output are the same, so handles over-dispersion better,
+and thus offers a more flexible distribution to be assumed. This
+prevents the outputs from being overfitted. The NB model also works best when 
+the variance is considerably larger than the mean. For these reasons, the NB
+model might be the better model compared to the LR, LTL, and Poisson
+regression models, but further investigation will need to be done to
+confirm this.
+
+ 
+
+Poisson Regression model using the *glm* function that specifies using
+the Poisson family branch.
+
+```{r}
+poisson_model = glm(medal_count_2012 ~ population + GDP, data=data, 
+                    family = "poisson")
+
+summary(poisson_model)
+```
+&nbsp;
+
+The Poisson regression model's coefficients are:
+
+```{r, echo=FALSE}
+coefficients_poisson = coef(poisson_model)
+print(coefficients_poisson)
+```
+&nbsp;
+
+Negative Binomial Regression model using the *glm.nb* function through
+the *MASS* package.
+
+```{r}
+library(MASS)
+
+nb_model = glm.nb(medal_count_2012 ~ population + GDP, data=data)
+
+summary(nb_model)
+```
+&nbsp;
+
+The Negative Binomial regression model's coefficients are:
+
+```{r, echo=FALSE}
+coefficients_nb = coef(nb_model)
+print(coefficients_nb)
+
+```
+
+ 
+
+Using the LR model, the parameters of the data are listed below:
+
+-   Intercept estimate is 6.07 ($\frac{+}{-}1.50$) with a significance
+    of $0.00013$.
+
+-   Population and GDP estimates are
+    $5.25e^{-9}~(\frac{+}{-}7.19e^{-9})$and
+    $7.56e^{-3}~(\frac{+}{-}7.33e^{-4})$ respectively.
+
+-   The significance of Population is $0.47$ and the significant of GDP
+    is $1.45e^{-15}$.
+
+-   AIC is 553
+
+-   $R^2$ value is 0.68, calculated from
+    $1-\frac{Residual~deviance}{Null~deviance }$;
+    $1-\frac{8989.6}{28402.8}$
+
+Interpreting this, a country's Population did not significantly
+influence the prediction of Medal Counts from the 2012 Olympic Games,
+whereas GDP did. For every increase in GDP (an increase of a billion US 
+dollars), the expected number of medals a country won increased by $7.56e^{-3}$.
+
+
+&nbsp;
+
+
+## 4.
+
+Akaike Information Criterion (AIC) can be used to determine which model
+performs the best.
+
+Summary of the models:
+
+Model 1 = Linear regression model
+
+Model 2 = Log-transformed Linear regression model
+
+Model 3 = Poisson regression model
+
+Model 4 = Negative Binomial regression model
+
+&nbsp;
+
+Using *AIC* to find the AIC for each of the models above.
+
+```{r}
+AIC_linear = AIC(linear_model)
+
+AIC_log = AIC(log_model)
+
+AIC_poisson = AIC(poisson_model)
+
+AIC_nb = AIC(nb_model)
+
+AIC_values = c(AIC_linear, AIC_log, AIC_poisson, AIC_nb)
+names(AIC_values) = c("Model 1", "Model 2", "Model 3", "Model 4")
+```
+
+&nbsp;
+
+AIC is a measure of the quality of the model for the dataset and
+penalises for overfitting whereas $R^2$ value is the measure of how well
+the model fits the observed data, i.e., the proportion the variance of
+2012 Medal Counts is explained by the variance of the Population and
+GDP.
+
+A low AIC value indicates that the model performed well relative to how
+many inputs or parameters were used. A high $R^2$ value shows that the
+model is a good fit to the data, with a caveat that it may be
+overfitting if there's a number of parameters used.
+
+Both metrics should be used to when assessing the performance of the
+models.
+
+&nbsp;
+
+Calculating the $R^2$ value for each model using the residual values and
+null deviance values outputted in the summary.
+
+```{r}
+residual_values = c(linear_model$deviance, log_model$deviance, 
+                    poisson_model$deviance, nb_model$deviance)
+names(residual_values) = c("Model 1", "Model 2", "Model 3", "Model 4")
+
+null_values = c(linear_model$null.deviance, log_model$null.deviance, 
+                poisson_model$null.deviance, nb_model$null.deviance)
+names(null_values) = c("Model 1", "Model 2", "Model 3", "Model 4")
+
+r_squared = 1 - (residual_values/null_values)
+```
+
+```{r, echo=FALSE}
+r_linear = r_squared[1]
+
+r_log = r_squared[2]
+
+r_poisson = r_squared[3]
+
+r_nb = r_squared[4]
+```
+
+```{r,echo=FALSE}
+all_AIC = c(AIC_linear, AIC_log, AIC_poisson,AIC_nb)
+all_r = c(r_linear,r_log,r_poisson,r_nb)
+
+evaluate_metrics = data.frame(all_AIC,all_r)
+rownames(evaluate_metrics) =c("Linear", "Log-Transformed","Poisson",
+                                 "Negative Binomial")
+colnames(evaluate_metrics) = c("AIC","R squared")
+
+print(evaluate_metrics)
+```
+
+**Table 2: Evaluation of Metrics** 
+Table of the AIC and $R^2$ values for all the 4 models before sorting.
+
+```{r,echo=FALSE}
+ordered_by_AIC = evaluate_metrics[order(evaluate_metrics$AIC, 
+                                        decreasing = FALSE),]
+ordered_by_AIC
+```
+**Table 3: Evaluation table by Best AIC value** 
+Table of the AIC and $R^2$ values for all the 4 models, sorted in ascending order of AIC
+values.
+
+```{r, echo=FALSE}
+ordered_by_r = evaluate_metrics[order(evaluate_metrics$`R squared`, 
+                                      decreasing = TRUE),]
+ordered_by_r
+```
+**Table 4: Evaluation table by best $R^2$ value** 
+Table of the AIC and $R^2$ values for all the 4 models, sorted in descending 
+order of $R^2$ values.
+
+&nbsp;
+
+```{r,echo=FALSE}
+best_model_AIC = which.min(AIC_values)
+print(paste("Model",best_model_AIC, "has the lowest AIC value."))
+```
+Model 2 (the Log-Transformed model) (Table 3) has the lowest AIC value, 
+therefore could be the best fit model for the data.
+
+&nbsp;
+
+```{r,echo=FALSE}
+best_model_r_squared = which.max(r_squared)
+
+print(paste("Model",best_model_r_squared, "has the highest R squared value" ))
+```
+
+&nbsp;
+
+Model 1 (Linear regression model) (Table 4) has the highest R squared value, 
+therefore could be the best fit model for the data.
+
+The best model as suggested by the AIC is different to the best fitting
+model suggested by the $R^2$ value. A model that strikes the balance of
+a relatively low AIC score and a relatively high $R^2$ score could be
+considered. Taking this into account Table 2 indicates that 
+model 1 or model 4, the LR model or the NB model respectively,could be better 
+models for the data.
+
+&nbsp;
+
+The log-likelihood (LL) can also be used to assess the goodness of fit
+of a regression model to the data. This metric quantifies how well the
+model predicts the observed data, where the higher the LL value the more
+it indicates the model is a better fit compared to the others.
+&nbsp;
+Using the *LogLik* function to find the LL value of each model.
+```{r}
+logL1 = logLik(linear_model)
+logL2 = logLik(log_model)
+logL3 = logLik(poisson_model)
+logL4 = logLik(nb_model)
+
+all_LL = c(logL1,logL2,logL3,logL4)
+```
+
+&nbsp;
+
+The LL values are added to the summary table containing the AIC and $R^2$
+values.
+```{r,echo=FALSE}
+updated_evaluate_metrics = data.frame(all_AIC,all_r,all_LL)
+rownames(updated_evaluate_metrics) =c("Linear", "Log-Transformed","Poisson",
+                                      "Negative Binomial")
+colnames(updated_evaluate_metrics) = c("AIC","R squared", "Log Likelihood")
+
+ordered_by_LL = updated_evaluate_metrics[order(
+  updated_evaluate_metrics$`Log Likelihood`, decreasing = TRUE),]
+
+print(ordered_by_LL)
+```
+**Table 5: Updated Evaluation of Metrics**
+Table of the AIC, $R^2$, and Log-Likelihood values for all the 4 models, 
+LL is sorted by descending order.
+
+```{r, echo=FALSE}
+best_model_LL = which.max(all_LL)
+print(paste("Model",best_model_LL, "has the highest Log Likelihood value" ))
+
+```
+According to the LL scores, model 2 (the LTL model) could be considered
+the best fit model for this data.
+
+&nbsp;
+
+Cross validation is another method to assess the performance of a
+predictive model. It uses training and testing subsets of the data to
+run iterations, to train and test the data based on the specified
+predictive model. Through this, an estimate of how well the model
+performed compared to other models is generated. Cross validation helps
+with overfitting as the model is trained on differently divided subsets and is a
+more reliable evaluation of the models' performance and predictive accuracy.
+&nbsp;
+First, creating the training and testing subsets using the whole dataset. The
+data is sampled so that 50% of the data is in the train subset and the 
+other half is in the test subset.
+
+The variable *formulas* is stating the predictive models being evaluated.
+```{r}
+set.seed(456)
+
+#Adding columns for the formulas to work.
+data$log_Medal2012 = log(data$Medal2012)
+data$poisson_Medal2012 = data$Medal2012
+data$nb_Medal2012 = data$Medal2012
+
+idx = sample(nrow(data),nrow(data) * 0.5)
+
+train_data = data[idx,]
+test_data = data[-idx,]
+
+formulas = c("Medal2012 ~ Population + GDP",
+             "log_Medal2012 ~ Population + GDP",
+             "poisson_Medal2012 ~ Population + GDP",
+             "nb_Medal2012 ~ Population + GDP")
+```
+
+&nbsp;
+
+Creating a *for loop* to generate and use the predicted log-probabilities to 
+assess the prediction quality of each model.
+```{r}
+predictive_log_likelihood  = rep(NA, length(formulas))
+
+for(i in 1:length(formulas)) {
+
+  if (grepl("nb_", formulas[i])) {
+    current_model = glm.nb(formula = formulas[i], data = train_data, control = 
+                             glm.control(maxit = 100))
+    predict_mean = predict(current_model, newdata = test_data, 
+                           type = "response")
+    predictive_log_likelihood[i] = 
+      sum(dnbinom(test_data$Medal2012, size = summary(current_model)$theta,
+                  mu = predict_mean, log = TRUE))
+    print("this is nb")
+    
+  } else if (grepl("poisson_", formulas[i])) {
+    current_model = glm(formula = formulas[i], family = "poisson", 
+                        data = train_data)
+    predict_mean = predict(current_model, newdata = test_data, 
+                           type = "response")
+    predictive_log_likelihood[i] = sum(dpois(test_data$Medal2012, 
+                                             lambda = predict_mean, 
+                                             log = TRUE))
+    print("this is poisson")
+    
+  } else {
+    current_model = glm(formula =formulas[i], family = "gaussian", 
+                        data = train_data)
+    sigma = sqrt(summary(current_model)$dispersion)
+    predict_mean = predict(current_model, newdata = test_data, 
+                           type = "response")
+    predictive_log_likelihood[i] = sum(dnorm(test_data$Medal2012, 
+                                             mean = predict_mean, 
+                                             sd = sigma, log = TRUE))
+    print("this is linear or log-transformed")
+  }
+}
+
+```
+Using *print()* to check that the all the models are being tested.
+
+
+```{r,echo=FALSE}
+model_names = c("Linear", "Log Transformed","Poisson",
+                "Negative Binomial")
+
+colours = c("mediumblue", "royalblue3", "indianred1","firebrick")
+
+plot(1:length(formulas), predictive_log_likelihood, col=colours, pch=19,
+     main = "Log Probability of the Predictive Models",
+xlab="Model", ylab="Log Probability",
+xaxt = "n", ylim = range(predictive_log_likelihood), yaxt = "n")
+  axis(side = 1, at = c(1,2,3,4), labels = model_names)
+axis(2, las = 1, cex.axis = 0.7)
+```
+**Figure 7: Log Probability**
+Plot of the Log probability of each model.
+
+&nbsp;
+
+From the log probability estimates, it appears that the LR and NB
+models are candidates for the best fitting models as these had the 2 highest
+log probabilities. The Poisson model however, could also be considered as it
+also has a relatively high scoring log probability. The LTL model is showing 
+that it is not a good fit for the models at all, contracting to what the AIC 
+and LL scores indicated.
+
+&nbsp;
+
+The above cross-validation method for predicting log-probabilities is
+iterated below to build a more accurate and reliable performance estimate of
+each model.
+```{r}
+winner = numeric(100)
+
+for(iteration in 1:100) {
+  idx = sample(nrow(data), nrow(data) * 0.5)
+  train_data = data[idx,]
+  test_data = data[-idx,]
+  
+  predictive_log_likelihood = rep(NA, length(formulas)) 
+  for(i in 1:length(formulas)) {
+    if (grepl("nb_", formulas[i])) {
+      current_model = glm.nb(formula = formulas[i], data = train_data, 
+                             control = glm.control(maxit = 100))
+      predict_mean = predict(current_model, newdata = test_data, 
+                             type = "response")
+      residuals = test_data$Medal2012 - predict_mean
+      residual_std = sqrt(sum(residuals^2) / length(residuals) - 1)
+      predictive_log_likelihood[i] = 
+        sum(dnbinom(test_data$Medal2012, size = summary(current_model)$theta, 
+                    mu = predict_mean, log = TRUE))
+      
+    } else if (grepl("poisson_", formulas[i])) {
+      current_model = glm(formula = formulas[i], 
+                          family = "poisson", data = train_data)
+      predict_mean = predict(current_model, newdata = test_data, 
+                             type = "response")
+      predictive_log_likelihood[i] = sum(dpois(test_data$Medal2012, 
+                                               lambda = predict_mean, 
+                                               log = TRUE))
+
+    } else {
+      current_model = glm(formula = formulas[i], family = "gaussian", 
+                          data = train_data)
+      sigma = sqrt(summary(current_model)$dispersion)
+      predict_mean = predict(current_model, newdata = test_data, 
+                             type = "response")
+      predictive_log_likelihood[i] = sum(dnorm(test_data$Medal2012, 
+                                               mean = predict_mean, 
+                                               sd = sigma, log = TRUE))
+    }
+  }
+  winner[iteration] = which.max(predictive_log_likelihood)
+}
+```
+
+```{r,echo=FALSE}
+
+model_names = c("Linear", "Log Transformed","Poisson",
+                "Negative Binomial")
+
+colours = c("mediumblue", "royalblue3", "indianred1","firebrick")
+
+hist(winner, breaks = seq(0, 4,1), 
+     xlab="Model", ylab="Frequency", 
+     main= "Histogram of Cross Validation Outcomes", col = colours,
+     xaxt = "n")
+axis(side = 1, at= c(0.5,1.5,2.5,3.5), labels = model_names)
+```
+**Figure 8: Best Performing Models**
+Histogram of the best or "winner" models over 100 iterations. Negative Binomial
+is almost 100% of the time the best fitting model.
+
+&nbsp;
+
+To summarise, from the AIC, $R^2$, and LL values, it was concluded that
+the best models would be the LR model or the NB model. Taking into
+account the cross validation results, the NB model routinely outperformed the LR
+modelling, proving to be the better fitting predictive model for the data.
+
+Therefore, the Negative Binomial model will be used to estimate the number of 
+medals Great Britain (GB) got in the 2012 Olympic Games and the probability of 
+Great Britain receiving at least one medal.
+
+
+&nbsp;
+
+
+## 5.  
+
+To find the output/ estimated number of medals:
+
+$$ y_i = \beta_0 + \beta_1x_{i1} + \beta_2x_{i2} + \epsilon_i, \epsilon_i \sim 
+N(0,\sigma^2) $$
+
+Therefore:
+
+$$ GB = Intercept_{coef} + ({Population_{coef} \times Population_{GB}}) + 
+({GDP_{cooef} \times GDP_{GB}}) $$
+
+&nbsp;
+
+The population and GDP data are extracted for Great Britain.
+```{r}
+GB_data = data[data$Country == "Great Britain",]
+population_GB = GB_data[3]
+GDP_GB = GB_data[2]
+```
+
+&nbsp;
+
+The $B_0$, $B_1{x}$, and $B_{2x}$ values are then pulled out from the Negative
+Binomial regression model.
+```{r}
+intercept_nb = coefficients_nb[1]
+
+population_nb = coefficients_nb[2]
+
+GDP_nb = coefficients_nb[3]
+```
+
+&nbsp;
+
+Calculating the output using the equation above.
+```{r}
+GB_nb = (intercept_nb + (population_nb*population_GB) + (GDP_nb*GDP_GB))
+```
+
+&nbsp;
+
+The probability of Great Britain winning at least one medal at the 2012 Olympic 
+Games is calculated below.
+```{r}
+probability_nb = 1-exp(-GB_nb)
+```
+
+&nbsp;
+
+According to the Negative Binomial regression model, the probability of 
+Great Britain winning at least one medal at the 2012 Olympic Games is 1.
+
+```{r, echo=FALSE}
+intercept_poisson = coefficients_poisson[1]
+
+population_poisson = coefficients_poisson[2]
+
+GDP_poisson = coefficients_poisson[3]
+
+GB_poisson = (intercept_poisson + (population_poisson*population_GB) + 
+  (GDP_poisson*GDP_GB))
+
+probability_poisson = 1-exp(-GB_poisson)
+```
+
+```{r,echo=FALSE}
+intercept_linear = coefficients_linear[1]
+
+population_linear = coefficients_linear[2]
+
+GDP_linear = coefficients_linear[3]
+
+GB_linear = (intercept_linear+ (population_linear*population_GB) + 
+                  (GDP_linear*GDP_GB))
+
+probability_linear = 1-exp(-GB_linear)
+
+```
+
+```{r,echo=FALSE}
+intercept_log = coefficients_log[1]
+
+population_log = coefficients_log[2]
+
+GDP_log = coefficients_log[3]
+
+GB_log = exp(intercept_log + (population_log*population_GB) + (GDP_log*GDP_GB))
+
+probability_GB_log = 1-exp(-GB_log)
+```
+
+&nbsp;
+
+```{r, echo=FALSE}
+est_medal_counts = data.frame(c(GB_nb, GB_linear, GB_log, GB_poisson))
+colnames(est_medal_counts) = c("Negative Binomial", "Linear",
+                               "Log-Transformed","Poisson")
+est_Probability = data.frame(c(probability_nb, probability_linear,
+                               probability_GB_log, probability_poisson))
+colnames(est_Probability) = c("Negative Binomial", "Linear",
+                              "Log-Transformed","Poisson")
+
+est_medal_counts = t(est_medal_counts)
+est_Probability = t(est_Probability)
+
+est_medal_counts = format(est_medal_counts, scientific = FALSE)
+
+combined_estimates = data.frame(est_medal_counts, est_Probability)
+colnames(combined_estimates) = c("Estimated 2012 Medal Counts", 
+                                 "Estimated Probability")
+
+print(combined_estimates)
+```
+**Table 6: Estimates of GB's 2012 Medal Counts and Probability**
+Table of the estimates of Great Britain's 2012 Olympic Games Medal Counts and 
+the Probability they would get at least one medal, as estimated by each of the
+four models.
+
+&nbsp;
+
+```{r,echo=FALSE}
+
+GB_log_all = exp(intercept_log + (population_log*data$Population) + 
+                   (GDP_log*data$GDP))
+GB_linear_all = (intercept_linear+ (population_linear*data$Population) + 
+                  (GDP_linear*data$GDP))
+GB_poisson_all = (intercept_poisson + (population_poisson*data$Population) + 
+  (GDP_poisson*data$GDP))
+GB_nb_all = (intercept_nb + (population_nb*data$Population) + 
+               (GDP_nb*data$GDP))
+
+nations_counts = data.frame(data$Medal2012, GB_linear_all,
+                            GB_log_all,GB_poisson_all,GB_nb_all)
+rownames(nations_counts) = rownames(data$Country)
+colnames(nations_counts) = c("Actual","Linear", "Log-Transformed","Poisson",
+                             "Negative Binomial")
+
+nations_counts[25:34,]
+
+```
+**Table 7: Estimated vs Actual 2012 Medal Counts of All Country**
+Table containing each models' estimated 2012 Medal Counts for 10 countries 
+compared to the actual Medal Counts the countries won during the 2012 Olympics.
+
+&nbsp;
+
+```{r,echo=FALSE}
+actual_GB_medal = data[data == "Great Britain",]$Medal2012
+print(actual_GB_medal)
+```
+Value of the actual number of medals GB had won in the 2012 Olympic Games.
+
+
+&nbsp;
+
+
+## Conclusion
+
+Based on the estimates (Table 6), the Linear Regression model emerged
+as the most accurate predictive model as it has the closes approximation to the
+actual 2012 GB Medal Counts of 65. Conversely, the Negative Binomial regression
+model performed poorly, despite showing promise in earlier assessments.
+It significantly underestimated Team GB's medal count as compared to the other 
+models, possibly indicating the model does not accurately captured the
+true relationship between the inputs and outputs.
+As both linear models appears to perform relatively better than the non-linear
+models, it could be assumed the relationship between Population/GDP and 
+2012 Medal counts is more linear than originally thought.
+
+Some of the models yielded estimated probabilities of 1 or close to 1. This is 
+expected as as all countries in the dataset had at least one gold medal, a 100%
+probability. Again, the LR and LTL models proved to be the better fitting models
+as they had estimated probabilities of 1 and 0.99 respectively. 
+The Poisson and NB models are at least 5% away from what the probability should
+be, further confirming these models are not the best fit for the data.
+
+Nonetheless, none of the four models demonstrated outstanding predictive
+accuracy, as they mostly mis-estimated the 2012 Medal Counts for GB. Table 7
+illustrates that, although the LR and LTL models generally made accurate 
+estimates, they are not consistent, and therefore, not completely reliable 
+models to use either.
+
+In conclusion, determining the best model for the dataset proved challenging, 
+considering factors like complexity, predictive accuracy,and interpretability. 
+A limitation of this modelling evaluation is the narrow range of models 
+investigated. Including other models such as the Robust regression model could 
+have broadened the scope and provided additional fitting options for the data. 
+Additionally, the dataset contained only 71 samples, limiting the accuracy of 
+the modelling.The report illustrated perfectly the flaws in relying on only 
+one method in evaluating which model is a good fit to data, as some could be 
+sensitive to small sample sizes. Cross-validation, in particular, would have 
+benefited from a larger sample size as it would have helped made the models more 
+robust and reliable, thus more likely to truly find the best fitting model. 
+Access to more Medal Counts data over multiple years and Olympic Games could 
+have facilitated the selection of a more accurate and validated model, and a 
+more accurate output estimate.
+
+
+

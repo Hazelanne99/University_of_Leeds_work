@@ -1,0 +1,375 @@
+---
+title: "Group 5 R Markdown"
+author: "Group 5"
+date: "2023-12-13"
+output: html_document
+---
+---
+title: "Group 5 R-Markdown"
+author: "Group 5"
+date: "2023-12-13"
+output: pdf_document
+---
+
+```{r}
+# loading gencode and .sf file directory
+
+setwd("C:/Users/hazel/OneDrive/Desktop/HTT")
+
+library(readr)
+tx2gene <- read_csv('tx2gene.gencode.v44.csv')
+
+head(tx2gene)
+
+
+```
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/hazel/OneDrive/Desktop/HTT/quantsf")
+
+```
+
+
+```{r}
+setwd("C:/Users/hazel/OneDrive/Desktop/HTT/quantsf")
+
+dir = dir(path="C:/Users/hazel/OneDrive/Desktop/HTT/quantsf")
+
+files <- file.path(dir)
+all(file.exists(files)) #Should be TRUE
+
+names(files) <- c('SRR7407814', 'SRR7407815', 'SRR7407816', 'SRR7407832', 
+                  'SRR7407833', 'SRR7407834')
+files
+
+```
+```{r}
+
+# importing .sf files using tximport
+library(tximport)
+
+txi <- tximport(files, type='salmon', tx2gene = tx2gene, ignoreAfterBar = T)
+
+head(txi$counts)
+
+
+# setting data to gene reference to ensure counts match
+txi.tx <- tximport(files, type = "salmon", txOut = TRUE, ignoreAfterBar = T)
+head(txi.tx)
+
+txi.sum <- summarizeToGene(txi.tx, tx2gene)
+
+all.equal(txi$counts, txi.sum$counts)
+
+# creating condition table and assigning either "Resistent" or "Parent" to samples
+conditions_data = data.frame(sample_Name = colnames(txi$counts), condition = 
+                               rep(c("Resistent","Parent"),each=3))
+conditions_data
+
+```
+```{r}
+library(DESeq2)
+
+# constructing DESeq dataset, design = condition
+ddsTxi = DESeqDataSetFromTximport(txi,
+                                  colData = conditions_data,
+                                  design = ~ condition)
+
+ddsTxi
+```
+
+```{r}
+
+# factor and releveling - setting reference condition
+ddsTxi$condition = factor(ddsTxi$condition, levels = c("Parent","Resistent"))
+ddsTxi$condition = relevel(ddsTxi$condition, ref = "Parent")
+```
+
+```{r}
+# running DESeq dataset through DESeq function
+ddsTxi = DESeq(ddsTxi)
+```
+
+```{r}
+# filtering out genes with no change between samples
+dds_filtered_all = ddsTxi[rowSums(counts(ddsTxi)) > 0, ]
+dds_filtered_all
+
+```
+```{r}
+
+# generating DESeq results table using the results function
+
+res_filtered = results(dds_filtered_all, alpha = 0.05, 
+                       contrast = c("condition", "Resistent", "Parent"))
+```
+```{r}
+
+# converting results to a data frame and removing NA values
+results_filtered = data.frame(res_filtered)
+
+results_filtered1 = na.omit(results_filtered)
+```
+
+```{r}
+
+# removing decimal points and places in gene accession codes
+rownames(results_filtered1) = gsub("\\..*","",rownames(results_filtered1))
+```
+
+```{r}
+
+# matching gene symbols to accession codes of genes
+
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(AnnotationDbi)
+
+ensembl_ids = rownames(results_filtered1) 
+gene_symbols = AnnotationDbi::select(org.Hs.eg.db, keys = ensembl_ids, columns = "SYMBOL",
+                      keytype = "ENSEMBL")
+
+symbol_list = split(gene_symbols$SYMBOL, gene_symbols$ENSEMBL)
+
+results_filtered1$symbol = symbol_list[match(ensembl_ids, names(symbol_list))]
+
+results_filtered2 = results_filtered1
+```
+```{r}
+# MA plots
+
+library('apeglm')
+library('ashr')
+
+resLFCapeg <- lfcShrink(ddsTxi, coef = 'condition_Resistent_vs_Parent', 
+                        type = 'apeglm')
+resLFCashr <- lfcShrink(ddsTxi, coef = 'condition_Resistent_vs_Parent', 
+                        type = 'ashr')
+
+
+par(mfrow=c(1,1))
+BiocGenerics::plotMA(res_filtered, ylim=c(-10,10), main = "MA Plot (No LFC Shrinkage; p < 0.05)", xlab = "A (Mean of Normalized Counts)", 
+                     ylab = "M (Log Fold Change)", colNonSig = "gray50", 
+                     colSig = 'darkblue', colLine = "gray30",
+                     yaxt = 'n', xaxt = 'n')
+axis(side = 2, las = 1)
+axis(side = 1, las = 1)
+
+par(mfrow=c(1,1))
+BiocGenerics::plotMA(resLFCapeg, ylim=c(-6,6),
+                     main = "MA Plot (LFC Shrinkage - apeglm)",
+                     xlab = "A (Mean of Normalized Counts)", 
+                     ylab = "M (Log Fold Change)",
+                     colSig = "darkblue", colLine = "gray30", colNonSig = "gray50",
+                     yaxt = 'n', xaxt = 'n')
+axis(side = 2, las = 1)
+axis(side = 1, las = 1)
+
+BiocGenerics::plotMA(resLFCashr, ylim=c(-6,6), 
+                     main = "MA Plot (LFC Shrinkage - ashr)",
+                     xlab = "A (Mean of Normalized Counts)", 
+                     ylab = "M (Log Fold Change)",
+                     colSig = "darkblue", colLine = "gray30", colNonSig = "gray50",
+                     yaxt = "n", xaxt = "n")
+axis(side = 2, las = 1)
+axis(side = 1, las = 1)
+```
+
+
+```{r}
+
+log2FC = results_filtered1[(results_filtered1$log2FoldChange >= 1 |
+                              results_filtered1$log2FoldChange <= -1) & 
+                             results_filtered1$padj <= 0.05,]
+
+# filtering out genes with a fold change < abs(2) and an adjusted p value > 0.05
+log2FC.2 = log2FC[log2FC$log2FoldChange >= 2 | log2FC$log2FoldChange <= -2 & 
+                    log2FC$padj <= 0.05,]
+```
+
+```{r}
+
+# encrichGO analysis on all genes with fold change > abs(2) and p.adj < 0.05
+
+
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+library(ggplot2)
+
+genes_to_test = rownames(log2FC.2)
+genes_to_test
+
+go_results = enrichGO(gene = genes_to_test,
+                      OrgDb ="org.Hs.eg.db",
+                      keyType = "ENSEMBL",
+                      ont = "BP",
+                      readable = TRUE
+                      )
+
+```
+```{r}
+#Graphs for the GOenrich data 
+
+barplot(go_results, showCategory = 15) +
+  labs(title = "Gene Counts against enriched Biological Process GO Terms",
+                   y = "Top 15 Enriched Biological Process GO Terms",
+                   x = "Gene Counts") 
+
+
+goplot(go_results, showCategory = 10, colours = "p.adjust") +
+  labs(
+    title = "GoPlot of the pathways towards the top 10 most enriched 
+       Biological Process GO terms.")
+
+
+dotplot(go_results, showCategory=12) +
+  labs(
+       y = "Top 12 most enriched Biological Process GO terms", 
+       title = "The Gene Ratio and Gene Counts of the enriched 
+       Biological Process GO terms.")
+
+
+
+x =pairwise_termsim(go_results)
+
+cnetplot(go_results,
+         ShowCatergory = 10,
+         layout = "kk",
+         colourEdge = TRUE,
+         cex_label_category = 0.5,
+         vortex.label.font = 9,
+         color_gene = "rosybrown2",
+         color_category = "goldenrod2",
+        ) +
+  labs(
+    title = "Relationship between the enriched Biological Process Go terms and 
+    each term's associated differentially expressed genes.")
+
+
+clusterProfiler::heatplot(go_results, showCategory = 10) +
+  geom_point(colour = "steelblue3") +
+  labs(x = "Most enriched genes", 
+       y = "Top 10 most enriched Biological Process GO terms", 
+       title = "Heatmap of GO Terms and Differentially Expressed Genes.")
+
+
+treeplot(x) +
+  labs(title = "Functional clustering of the enriched Biological Process GO 
+       terms.")
+
+
+```
+
+```{r}
+
+#Separate the filtered genes into up- and downregulated variables 
+
+upregulated_2 = log2FC.2[log2FC.2$log2FoldChange >= 2,]
+
+downregulated_2 =log2FC.2[log2FC.2$log2FoldChange <= -2,]
+
+```
+```{r}
+
+
+genes_to_test_down = rownames(downregulated_2)
+genes_to_test_down
+
+go_results_down = enrichGO(gene = genes_to_test_down,
+                      OrgDb ="org.Hs.eg.db",
+                      keyType = "ENSEMBL",
+                      ont = "CC",
+                      readable = TRUE
+)
+
+
+barplot(go_results_down, showCategory = 15) +
+  labs(title = "Gene Counts against enriched Cellular Components GO Terms",
+       y = "Top 15 Enriched Cellular Component GO Terms",
+       x = "Gene Counts") 
+
+goplot(go_results_down, showCategory = 10) +
+  labs(title = "GoPlot of the pathways towards the top 10 most enriched 
+       Cellular Component GO terms.")
+
+y =pairwise_termsim(go_results_down)
+
+cnetplot(go_results_down,
+         ShowCatergory = 10,
+         layout = "kk",
+         colourEdge = TRUE,
+         cex_label_category = 0.5,
+         vortex.label.font = 9,
+         color_gene = "dodgerblue2",
+         color_category = "goldenrod2",
+) +
+  labs(
+    title = "Relationship between the enriched Cellular Component Go terms and 
+    each term's associated differentially expressed genes.")
+
+
+clusterProfiler::heatplot(go_results_down, showCategory = 10) +
+  geom_point(colour = "darkgreen") +
+  labs(x = "Most enriched genes", 
+       y = "Top 10 most enriched Cellular Component GO terms", 
+       title = "Heatmap of Molecular Function GO Terms and 
+       Differentially Expressed Genes.")
+
+
+treeplot(y)+
+  labs(title = "Functional clustering of the enriched Cellular Component GO 
+       terms.")
+```
+
+```{r}
+genes_to_test_up = rownames(upregulated_2)
+genes_to_test_up
+
+go_results_up = enrichGO(gene = genes_to_test_up,
+                           OrgDb ="org.Hs.eg.db",
+                           keyType = "ENSEMBL",
+                           ont = "CC",
+                           readable = TRUE
+)
+
+
+
+fit = plot(barplot(go_results_up, showCategory = 15,
+                   ylab = "Enriched pathways",
+                   xlab = "Counts")
+)
+
+barplot(go_results_up, showCategory = 15,
+        main = "Barplot",
+        ylab = "Enriched pathways",
+        xlab = "Counts")
+
+
+
+goplot(go_results_up, showCategory = 10)
+
+
+dotplot(go_results_up, showCategory=10)
+
+
+z =pairwise_termsim(go_results_up)
+
+cnetplot(go_results_up,
+         ShowCatergory = 10,
+         layout = "kk",
+         colourEdge = TRUE,
+         cex_label_category = 0.5,
+         vortex.label.font = 9,
+         color_gene = "darkblue",
+         color_category = "goldenrod2"
+) +
+  labs(
+    title = "Relationship between the enriched Cellular Component Go terms and 
+    each term's associated differentially expressed genes.")
+
+clusterProfiler::heatplot(go_results_up, showCategory = 10)
+
+
+```
+```
