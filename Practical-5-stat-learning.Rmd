@@ -1,0 +1,1664 @@
+---
+title: 'Assessed Practical III: Can I eat that mushroom?'
+author: "Hazel.A.Fernando - 201202015"
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+To assess the performance of new methods, classic machine learning data
+sets are used. These are data sets that have been used before, and so
+the predictive accuracy of the new models can be bench marked against
+existing methods.
+
+One such classical data set is the 'Mushroom data set', a selection of
+observations about different specimens of gilled mushrooms from The
+Audubon Society Field Guide to North American Mushrooms (1981).
+
+Within this data set, it includes the following variables:
+
+-   Edible
+
+-   CapShape
+
+-   CapSurface
+
+-   CapColor
+
+-   Odor
+
+-   Height
+
+In this instance, the output is the variable Edible.
+
+Therefore, the aim of this practical is to evaluate the best
+model/method to determine whether a certain mushroom is poisonous given
+the other variables provided.
+
+All the variables are non-numeric categorical data points (factors).
+
+A decision tree (DT) model or a random forest (RF) model is considered
+for this type of outcome variable. As predictive accuracy is being
+prioritised over interpretability, these methods are more suitable
+options to explore.
+
+&nbsp:
+
+Read the data in and see what the data is like. All the variables are
+changed into factors for later packages to work.
+
+```{r}
+
+mushroom <- read.csv("mushrooms.csv", header = TRUE)
+```
+
+```{r, echo=FALSE}
+
+mushroom$Edible <- as.factor(mushroom$Edible)
+mushroom$CapShape <- as.factor(mushroom$CapShape)
+mushroom$CapSurface <- as.factor(mushroom$CapSurface)
+mushroom$CapColor <- as.factor(mushroom$CapColor)
+mushroom$Odor <- as.factor(mushroom$Odor)
+mushroom$Height <- as.factor(mushroom$Height)
+
+```
+
+&nbsp:
+
+# Task 1
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(knitr)
+library(kableExtra)
+
+```
+
+Training and testing data sets are created from the main data set to
+evaluate the predictive power of any models.
+
+```{r}
+
+set.seed(123)
+
+train_indices <- createDataPartition(mushroom$Edible, p = 0.8, list = FALSE)
+train_data <- mushroom[train_indices, ]
+test_data <- mushroom[-train_indices, ]
+
+```
+
+ 
+
+A basic or baseline DT model is conducted using the *rpart* function,
+keeping the default parameter settings the same, and with all the inputs
+included, to investigate and set an initial accuracy score. This is so
+later iterations of the DT model can be compared to it.
+
+```{r}
+dt_all_cp1 <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                                 method = "class",
+                                 data = train_data)
+
+preds_1 <- predict(dt_all_cp1, 
+                       newdata = test_data, 
+                       type = "class")  
+```
+
+```{r, echo=FALSE}
+accuracy_1 <- confusionMatrix(factor(preds_1), factor(test_data$Edible))
+
+accuracy_1 <- accuracy_1$overall[1:2]
+
+print(paste0("The initial accuracy of the DT model is ", 
+             signif(accuracy_1[1], 5)))
+
+```
+
+ 
+
+The predictive performance of the DT model can be improved by tuning the
+different parameters the function uses.
+
+A series of loops are used to evaluate the best complexity parameter
+(CP) value, minbucket, maxdepth, and minsplit value that maximises the
+predictive power of the model. Each parameter is evaluated to find at
+which values would the DT model's accuracy exceed the initial baseline.
+
+ 
+
+#### CP values
+
+```{r, echo=FALSE}
+cp_values <- seq(0.0001, 0.01, by = 0.0001)
+
+accuracies <- numeric(length(cp_values))
+
+for (i in seq_along(cp_values)) {
+  dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    cp = cp_values[i],
+                    method = "class",
+                    data = train_data)
+  
+  preds <- predict(dt_model, newdata = test_data, type = "class")
+  
+  accuracy <- confusionMatrix(factor(preds), 
+                              factor(test_data$Edible))$overall[1]
+  
+  accuracies[i] <- accuracy
+}
+```
+
+```{r,echo = FALSE, fig.cap= "Plot of the prediction accuracy at different values of CP."}
+#1
+
+plot(cp_values, accuracies, type = "b", xlab = "CP Values", ylab = "Accuracy", 
+     main = "Accuracy vs. CP Values",
+     col = "saddlebrown",
+     las = 1)
+grid()
+abline(h = accuracy_1[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 0.001, y = c(accuracy_1[1]), 
+     labels = "Baseline Accuracy", 
+     cex = 0.7, 
+     pos=3)
+```
+
+It appears the best accuracy arises when the CP is set between 0.0001
+and 0.001.
+
+Cross validation is used to find the best CP value between 0.0001 and
+0.001. All other factors have been kept the same.
+
+```{r, warning=FALSE, echo=FALSE}
+library(e1071) 
+
+cp_values <- seq(0.0001, 0.001, by = 0.00001)
+
+accuracies <- numeric(length(cp_values))
+
+folds <- createFolds(mushroom$Edible, k = 10, list = TRUE, returnTrain = TRUE)
+
+for (i in seq_along(cp_values)) {
+  fold_accuracies <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- folds[[j]]
+    train_data_cv <- mushroom[train_indices, ]
+    test_data_cv <- mushroom[-train_indices, ]
+    
+    dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                      data = train_data_cv, method = "class",
+                      cp = cp_values[i])
+    
+    preds <- predict(dt_model, newdata = test_data_cv, type = "class")
+    
+    accuracy <- confusionMatrix(factor(preds), 
+                                factor(test_data_cv$Edible))$overall[1]
+    
+    fold_accuracies[j] <- accuracy
+  }
+  
+  accuracies[i] <- mean(fold_accuracies)
+}
+```
+
+```{r, echo=FALSE, fig.cap="Plot of the prediction accuracy at different values of CP after cross validation."}
+#2
+
+par(mar = c(4, 6, 4, 1) + 0.1)  
+
+plot(cp_values, accuracies, type = "b", xlab = "CP Values", ylab = "", 
+     main = "Accuracy vs. CP Values after Cross Validation",
+     col = "saddlebrown",
+     las = 1)
+grid()
+mtext("Accuracy", side = 2, line = 5, cex = 1)
+abline(h = accuracy_1[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 0.001, y = c(accuracy_1[1]), 
+     labels = "Baseline Accuracy", 
+     cex = 0.7, 
+     pos=3)
+```
+
+```{r, echo=FALSE}
+best_cp <- cp_values[which.max(accuracies)]
+print(paste("Best cp:", best_cp))
+```
+
+ 
+
+#### Maxdepth Values
+
+```{r, echo=FALSE}
+
+maxdepth <- seq(1, 30, by = 1)
+
+accuracies <- numeric(length(maxdepth))
+
+folds <- createFolds(mushroom$Edible, k = 10, list = TRUE, returnTrain = TRUE)
+
+for (i in seq_along(maxdepth)) {
+  fold_accuracies <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- folds[[j]]
+    train_data_cv <- mushroom[train_indices, ]
+    test_data_cv <- mushroom[-train_indices, ]
+    
+    dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                      data = train_data_cv, method = "class",
+                      cp = best_cp,
+                      maxdepth = maxdepth[i])
+    
+    preds <- predict(dt_model, newdata = test_data_cv, type = "class")
+    
+    accuracy <- confusionMatrix(factor(preds), 
+                                factor(test_data_cv$Edible))$overall[1]
+    
+    fold_accuracies[j] <- accuracy
+  }
+  
+  accuracies[i] <- mean(fold_accuracies)
+}
+```
+
+```{r, echo=FALSE, fig.cap= "Plot of the prediction accuracy at different values of maxdepth after cross validation."}
+#3
+
+plot(maxdepth, accuracies, type = "b", xlab = "Maxdepth Values", 
+     ylab = "Accuracy", 
+     main = "Accuracy vs. Maxdepth Values after Cross Validation",
+          col = "saddlebrown",
+     las=1)
+grid()
+abline(h = accuracy_1[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 28, y = c(accuracy_1[1]), labels = "Baseline Accuracy", cex = 0.7, 
+     pos=3)
+
+```
+
+```{r, echo=FALSE}
+best_maxdepth <- maxdepth[which.max(accuracies)]
+print(paste("Best maxdepth:", best_maxdepth))
+```
+
+ 
+
+#### Minbucket
+
+```{r, echo=FALSE}
+
+minbucket <- seq(1, 20, by = 1)
+
+accuracies <- numeric(length(minbucket))
+
+folds <- createFolds(mushroom$Edible, k = 10, list = TRUE, returnTrain = TRUE)
+
+for (i in seq_along(minbucket)) {
+  fold_accuracies <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- folds[[j]]
+    train_data_cv <- mushroom[train_indices, ]
+    test_data_cv <- mushroom[-train_indices, ]
+    
+    dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                      data = train_data_cv, method = "class",
+                      cp = best_cp,
+                      maxdepth = best_maxdepth,
+                      minbucket = minbucket[i])
+    
+    preds <- predict(dt_model, newdata = test_data_cv, type = "class")
+    
+    accuracy <- confusionMatrix(factor(preds), 
+                                factor(test_data_cv$Edible))$overall[1]
+    
+    fold_accuracies[j] <- accuracy
+  }
+  
+  accuracies[i] <- mean(fold_accuracies)
+}
+
+```
+
+```{r, echo=FALSE, fig.cap= "Plot of the prediction accuracy at different values of minbucket after cross validation."}
+#4
+
+par(mar = c(4,6,4,1) + 0.1)
+
+plot(minbucket, accuracies, type = "b", xlab = "Minbucket Values", 
+     ylab = "", main = "Accuracy vs. Minbucket Values after Cross Validation",
+               col = "saddlebrown",
+     las=1)
+grid()
+mtext("Accuracy", side = 2, line = 5, cex = 1 )
+abline(h = accuracy_1[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 4, y = c(accuracy_1[1]), labels = "Baseline Accuracy", 
+     cex = 0.7, pos=3)
+
+```
+
+```{r, echo=FALSE}
+best_minbucket <- minbucket[which.max(accuracies)]
+print(paste("Best minbucket:", best_minbucket))
+```
+
+ 
+
+```{r, echo=FALSE}
+
+minsplit <- seq(10, 50, by = 5)
+
+accuracies <- numeric(length(minsplit))
+
+folds <- createFolds(mushroom$Edible, k = 10, list = TRUE, returnTrain = TRUE)
+
+for (i in seq_along(minsplit)) {
+  fold_accuracies <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- folds[[j]]
+    train_data_cv <- mushroom[train_indices, ]
+    test_data_cv <- mushroom[-train_indices, ]
+    
+    dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                      data = train_data_cv, method = "class",
+                      cp = best_cp,
+                      maxdepth = best_maxdepth,
+                      minbucket = best_minbucket,
+                      minsplit = minsplit[i])
+    
+    preds <- predict(dt_model, newdata = test_data_cv, type = "class")
+    
+    accuracy <- confusionMatrix(factor(preds), 
+                                factor(test_data_cv$Edible))$overall[1]
+    
+    fold_accuracies[j] <- accuracy
+  }
+  
+  accuracies[i] <- mean(fold_accuracies)
+}
+
+```
+
+```{r, echo=FALSE, fig.cap= "Plot of the prediction accuracy at different values of minsplit after cross validation."}
+#5
+
+par(mar = c(4,6,4,1) + 0.1)
+
+plot(minsplit, accuracies, type = "b", xlab = "Minsplit Values", 
+     ylab = "", main = "Accuracy vs. Minsplit Values after Cross Validation",
+               col = "saddlebrown",
+     las=1)
+grid()
+mtext("Accuracy", side = 2, line = 5, cex = 1)
+abline(h = accuracy_1[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 15, y = c(accuracy_1[1]), labels = "Baseline Accuracy", cex = 0.7, pos=3)
+
+```
+
+```{r, echo=FALSE}
+best_minsplit <- minsplit[which.max(accuracies)]
+print(paste("Best minsplit:", best_minsplit))
+```
+
+ 
+
+A CP value between 0 and 0.001 did improve the model the most. When
+evaluated further with smaller CP values through cross validation, it
+appeared that CP = \< 0.0009 is the cause of the increase in the
+accuracy, therefore a CP value of the best CP will be used in further DT
+modelling. Sequentially evaluating the maxdepth, minbucket, or minsplit
+did appear to change the prediction accuracy, therefore the best values
+of these parameters will be used.
+
+ 
+
+### Feature Selection 
+
+Feature selection of the inputs can be considered to evaluate whether a
+certain combination of inputs generate a better predictive DT model.
+
+```{r, echo=FALSE}
+input_variables_dt <- c("CapSurface", "CapColor", "CapShape", "Odor", "Height")
+
+input_combinations_dt <- lapply(1:length(input_variables_dt), 
+                                function(n) combn(input_variables_dt, n, 
+                                                  simplify = FALSE))
+
+input_combinations_dt <- unlist(input_combinations_dt, recursive = FALSE)
+
+accuracies_dt <- numeric(length(input_combinations_dt))
+
+combination_labels_dt <- character(length(input_combinations_dt))
+```
+
+```{r, warning=FALSE}
+for (i in seq_along(input_combinations_dt)) {
+  input_combinations_dt_i <- input_combinations_dt[[i]]
+  
+  formula_dt <- as.formula(paste("Edible ~", paste(input_combinations_dt_i, 
+                                                   collapse = " + ")))
+  
+  combination_labels_dt[i] <- paste(input_combinations_dt_i, collapse = ", ")
+  
+  dt_model <- rpart(formula_dt,
+                    cp = best_cp,
+                    maxdepth = best_maxdepth,
+                    minbucket = best_minbucket,
+                    minsplit = best_minsplit,
+                    method = "class",
+                    data = train_data)
+  
+  preds_dt <- predict(dt_model, newdata = test_data, type = "class")
+  
+  accuracy_dt <- confusionMatrix(factor(preds_dt), 
+                                 factor(test_data$Edible))$overall[1]
+  
+  accuracies_dt[i] <- accuracy_dt
+}
+
+```
+
+```{r, echo=FALSE,warning=FALSE}
+
+combination_labels_dt <- as.character(combination_labels_dt)
+
+dt_list_accuracies <- data.frame(Combinations = combination_labels_dt, 
+                                 Accuracies = accuracies_dt)
+
+sorted_dt_list_accuracies <- 
+  dt_list_accuracies[order(-dt_list_accuracies$Accuracies), ]
+
+
+kable(sorted_dt_list_accuracies, caption="List of all 31 input combinations and the predictive accuracy, in decending order, of the DT model when the combination of inputs were used.")
+
+```
+
+```{r, warning = FALSE,echo=FALSE, fig.cap="Plot of the predicted accuracy when each combination of inputs were used."}
+#6
+
+library(stringr)
+
+rep_str = c('CapShape'='CSp','CapColor'='CC','CapSurface'='CSf', 
+            "Height"="H", "Odor"="O")
+
+input_combinations_dt.try <- lapply(input_combinations_dt, 
+                                    function(x) {str_replace_all(x, rep_str)
+})
+
+input_combinations_dt.try <- sapply(input_combinations_dt.try, 
+                                    function(x) paste(x, collapse = ", "))
+
+layout(matrix(c(1, 2), nrow = 1, ncol = 2), widths = c(4, 1))
+
+par(mar = c(6, 4, 4, 1) + 0.1)  
+
+plot(1:length(input_combinations_dt.try), accuracies_dt, type = "b", 
+     xlab = "",  
+     ylab = "Accuracy", 
+     main = "Accuracy vs. Input Variable Combinations", 
+     xaxt = "n",
+     col = "saddlebrown",
+     las = 1,
+     pch = 16,
+     cex.main = 1)
+
+axis(1, at = 1:length(input_combinations_dt.try), 
+     labels = input_combinations_dt.try, 
+     las = 2, cex.axis = 0.7)  
+
+grid()
+
+mtext("Baseline Accuracy", side = 4, line = 1,
+      at = accuracy_1[1], cex = 0.5, las = 1)
+
+mtext("Input Variable Combinations", side = 1, line = 5, cex = 0.8)
+
+abline(h = accuracy_1[1], col = "orangered2", lty = 1, lwd = 1)
+
+par(mar = c(6, 0, 4, 2) + 0.1)  
+
+plot.new()
+
+legend("bottomleft", 
+       legend = c("CSf: CapSurface","CSp: CapShape", "CC: CapColor",
+                  "H: Height","O: Odor" ), 
+       lty = c(1, 1), pch = NA, lwd = NA, cex = 0.55, xpd = TRUE)
+
+```
+
+```{r, echo=FALSE,warning=FALSE, message=FALSE, fig.cap="Bar plot of the Mean Decrease Gini value for each input variable. The DT model this was evaluated from is using the optimised parameter values."}
+#7
+
+library(randomForestExplainer)
+library(ggplot2)
+
+dt_model <- rpart(Edible ~ CapShape + CapColor + CapSurface + Height + Odor,
+                  cp = best_cp,
+                  minbucket = best_minbucket,
+                  minsplit = best_minsplit,
+                  maxdepth = best_maxdepth,
+                  method = "class",
+                  data = mushroom)
+
+# Extract variable importance using the caret package
+importance <- varImp(dt_model, scale = FALSE)
+
+# Convert the importance data to a data frame
+importance_data <- as.data.frame(importance)
+
+# Add a Variable column
+importance_data$Variable <- rownames(importance_data)
+
+# Ensure 'Overall' column exists or rename the relevant column
+if (!"Overall" %in% colnames(importance_data)) {
+  colnames(importance_data)[1] <- "Overall"  # Assuming the first column is the importance score
+}
+
+# Sort the data by importance
+importance_data <- importance_data[order(importance_data$Overall, decreasing = TRUE), ]
+
+# Plot variable importance
+ggplot(importance_data, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_bar(stat = "identity", fill = "saddlebrown") +
+  coord_flip() +
+  labs(title = "Variable Importance", x = "Variables", y = "Importance (Overall)") +
+  theme_minimal()
+
+```
+
+*Odor* appears to have the most, if not the only, influence on the
+outcome.
+
+Every combination that include *Odor* has the highest predictive value, indicating *Odor* has substantially more influence in the output. The importance of each input was accessed (using the *caret* function), and showed that *Odor* has considerably the highest overall importance. The other inputs, *CapColour*, *CapShape* and *CapSurface* all show similar importance or influence on the output.
+
+*Height* is suggested to have no effect on the output and could be reason to possibly remove *Height* from the final DT model to simplify the interpretability and improve its predictive power. Therefore, *Height* will NOT be included in the final DT model.
+
+ 
+
+```{r, echo=FALSE}
+best_combination_dt <- 
+  as.character(sorted_dt_list_accuracies[3, "Combinations"])
+
+best_inputs_dt <- unlist(strsplit(best_combination_dt, ", "))
+
+model_input_dt <- paste(best_inputs_dt, collapse = " + ")
+
+formula_dt <- as.formula(paste("Edible ~", model_input_dt))
+
+```
+
+**The maximised DT model will use all the inputs but *Height*, and the optimised parameters.**
+
+```{r}
+best_dt <- rpart(formula_dt,
+                                 cp = best_cp,
+                    maxdepth = best_maxdepth,
+                    minbucket = best_minbucket,
+                    minsplit = best_minsplit,
+                    method = "class",
+                    data = train_data)
+
+preds_2 <- predict(best_dt,newdata = test_data, type = "class")
+```
+
+```{r, echo=FALSE, results='asis'}
+accuracy_2 <- confusionMatrix(factor(preds_2), factor(test_data$Edible))
+
+accuracy_2 <- accuracy_2$overall[1:2]
+
+message <- paste0("The predictive accuracy of the DT method using the best combination of inputs and parameters is ", 
+             signif(accuracy_2[1],5))
+
+cat(message, "\n")
+```
+
+```{r, echo=FALSE, results='asis'}
+message <- if (accuracy_1[1] > accuracy_2[1]){
+  paste0("The accuracy of the bestline DT model is higher than the accuracy of the best DT model.")
+  
+}else{
+  paste0("The accuracy of the best DT model is higher than the accuracy of the baseline DT model. Therefore, the tuning of the hyperparameters and feature selection were effective in maximising the DT model.")
+}
+
+cat(message, "\n")
+```
+
+ 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(randomForest)
+```
+
+A preliminary RF model is created using the *randomForest* function,
+keeping the default parameter settings the same and including all the
+input variables. The prediction accuracy score will be used as the
+baseline to help model the best RF model.
+
+```{r}
+rf_model <- randomForest(Edible ~ CapShape + CapColor + CapSurface + Height + 
+                           Odor, 
+                        data=train_data)
+
+preds_rf <- predict(rf_model, newdata=test_data, type="class")
+```
+
+```{r, echo=FALSE}
+
+accuracy_initial <- 
+  confusionMatrix(preds_rf, test_data$Edible)$overall["Accuracy"]
+
+
+print(paste0("The initial accuracy of the RF model is ", 
+             signif(accuracy_initial[1], 5)))
+
+```
+
+The accuracy of the baseline RF model is already higher than the best DT
+model.
+
+In the same way for the DT model, the predictive performance of the RF
+model can be improved by tuning the model's parameters.
+
+The mtry, ntree and nodesize parameters are evaluated individually to
+see the optimal values to use to improve the predictive power of the RF
+model.
+
+&nbsp:
+
+#### mtry
+
+```{r, echo=FALSE, warning=FALSE}
+mtry <- seq(0, 5, by = 1)
+
+accuracies_rf <- numeric(length(mtry))
+
+folds <- createFolds(mushroom$Edible, k = 10, list = TRUE, returnTrain = TRUE)
+
+for (i in seq_along(mtry)) {
+  fold_accuracies <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- folds[[j]]
+    train_data_cv <- mushroom[train_indices, ]
+    test_data_cv <- mushroom[-train_indices, ]
+    
+rf_model <- randomForest(Edible ~ CapShape + CapColor + CapSurface + Height + Odor,
+                    mtry = mtry[i],
+                    data = train_data)
+
+    preds_rf <- predict(rf_model, newdata = test_data_cv, type = "class")
+    
+    accuracy <- confusionMatrix(factor(preds_rf), 
+                                factor(test_data_cv$Edible))$overall[1]
+    
+    fold_accuracies[j] <- accuracy
+  }
+  
+  accuracies_rf[i] <- mean(fold_accuracies)
+}
+
+
+```
+
+```{r, echo=FALSE, fig.cap="Plot of the accuracy of the RF model at each increasing mtry value after cross validation."}
+#8
+
+par(mar = c(4, 5, 4, 1) + 0.1)  
+
+plot(mtry, accuracies_rf, 
+     type = "b", 
+     xlab = "mtry values", 
+     ylab = "", 
+     main = "Accuracy vs. mtry values after Cross Validation",
+     col = "saddlebrown",
+     las=1)
+grid()
+mtext("Accuracy", side = 2, line = 4, cex = 1)
+abline(h = accuracy_initial[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 0.5, y = c(accuracy_initial[1]), labels = "Baseline Accuracy", 
+     cex = 0.7, pos=1)
+
+```
+
+```{r, echo=FALSE}
+best_mtry <- mtry[which.max(accuracies_rf)]
+print(paste("Best mtry:", best_mtry))
+```
+
+ 
+
+#### Nodesize
+
+```{r, echo=FALSE}
+nodesize <- seq(1, 20, by = 1)
+
+accuracies_rf <- numeric(length(nodesize))
+
+folds <- createFolds(mushroom$Edible, k = 10, list = TRUE, returnTrain = TRUE)
+
+for (i in seq_along(nodesize)) {
+  fold_accuracies <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- folds[[j]]
+    train_data_cv <- mushroom[train_indices, ]
+    test_data_cv <- mushroom[-train_indices, ]
+    
+rf_model <- randomForest(Edible ~ CapShape + CapColor + CapSurface + Height + Odor,
+                    mtry = best_mtry,
+                    nodesize = nodesize[i],
+                    data = train_data)
+
+    preds_rf <- predict(rf_model, newdata = test_data_cv, type = "class")
+    
+    accuracy <- confusionMatrix(factor(preds_rf), 
+                                factor(test_data_cv$Edible))$overall[1]
+    
+    fold_accuracies[j] <- accuracy
+  }
+  
+  accuracies_rf[i] <- mean(fold_accuracies)
+}
+```
+
+```{r, echo=FALSE, fig.cap="Plot of the accuracy of the RF model at each increasing nodesize value after cross validation."}
+#9
+
+par(mar = c(4, 5, 4, 1) + 0.1)  
+
+plot(nodesize, accuracies_rf, type = "b", 
+     xlab = "Nodesize values", 
+     ylab = "", 
+     main = "Accuracy vs. Nodesize values after Cross Validation",
+     col = "saddlebrown",
+     las=1)
+grid()
+mtext("Accuracy", side = 2, line = 4, cex = 1)
+abline(h = accuracy_initial[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 15, y = c(accuracy_initial[1]), 
+     labels = "Baseline Accuracy", cex = 0.7, pos=3)
+
+```
+
+```{r, echo=FALSE}
+best_nodesize <- nodesize[which.max(accuracies_rf)]
+print(paste("Best nodesize:", best_nodesize))
+```
+
+ 
+
+#### ntree
+
+```{r,echo=FALSE}
+ntree <- seq(500, 1000, by = 100)
+
+accuracies_rf <- numeric(length(ntree))
+
+for (i in seq_along(ntree)) {
+  fold_accuracies <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- folds[[j]]
+    train_data_cv <- mushroom[train_indices, ]
+    test_data_cv <- mushroom[-train_indices, ]
+    
+rf_model <- randomForest(Edible ~ CapShape + CapColor + CapSurface + Height + 
+                           Odor,
+                    mtry = best_mtry,
+                    nodesize = best_nodesize,
+                    ntree = ntree[i],
+                    data = train_data)
+
+    preds_rf <- predict(rf_model, newdata = test_data_cv, type = "class")
+    
+    accuracy <- confusionMatrix(factor(preds_rf), 
+                                factor(test_data_cv$Edible))$overall[1]
+    
+    fold_accuracies[j] <- accuracy
+  }
+  
+  accuracies_rf[i] <- mean(fold_accuracies)
+}
+```
+
+```{r,echo=FALSE, fig.cap="Plot of the accuracy of the RF model at each increasing ntree value after cross validation."}
+#10
+
+par(mar = c(4, 5, 4, 1) + 0.1)  
+
+plot(ntree, accuracies_rf, 
+     type = "b", 
+     xlab = "ntree values", 
+     ylab = "", 
+     main = "Accuracy vs. ntree values after Cross Validation",     
+     col = "saddlebrown",
+     las=1)
+grid()
+mtext("Accuracy", side = 2, line = 4, cex = 1)
+abline(h = accuracy_initial[1], col = "orangered2", lty = 1, lwd=2)
+text(x = 550, y = c(accuracy_initial[1]), 
+     labels = "Baseline Accuracy", cex = 0.7, pos=3)
+
+```
+
+```{r, echo=FALSE}
+best_ntree <- ntree[which.max(accuracies_rf)]
+print(paste("Best ntree:", best_ntree))
+```
+
+The best mtry and nodesize values had given an increase in accuracy as it increased the potential to capture any
+complex relationships between the inputs. A caution is that this may
+lead to overfitting, poor generalisation to any unseen data, and more
+difficulty in interpreting the model. For the moment, these parameters
+will be used.
+
+At any value between 500 and 1000, the accuracy is still higher than the
+baseline accuracy, therefore any value of ntree can be used between this
+range, the best ntree size suggested through the cross validation will
+be used. ntree \> 1000 would show very little improvement, but risk
+increasing computational time, and so was not considered.
+
+ 
+
+### Feature Selection
+
+Feature selection of the inputs are again considered to evaluate whether
+a certain combination of inputs generate a better predictive RF model.
+
+```{r, warning=FALSE, echo=FALSE}
+input_variables_rf <- c("CapSurface", "CapColor", "CapShape", "Odor", "Height")
+
+input_combinations_rf <- lapply(1:length(input_variables_rf), function(n) combn(input_variables_rf, n, simplify = FALSE))
+
+input_combinations_rf <- unlist(input_combinations_rf, recursive = FALSE)
+
+accuracies_rf <- numeric(length(input_combinations_rf))
+
+combination_labels_rf <- character(length(input_combinations_rf))
+```
+
+```{r, warning=FALSE, echo=FALSE}
+
+for (i in seq_along(input_combinations_rf)) {
+  input_combinations_rf_i <- input_combinations_rf[[i]]
+  
+  formula_rf <- 
+    as.formula(paste("Edible ~", 
+                     paste(input_combinations_rf_i,collapse = " + ")))
+  
+  combination_labels_rf[i] <- paste(input_combinations_rf_i, collapse = ", ")
+
+  rf_model <- randomForest(formula_rf,
+                           ntree = best_ntree,
+                           mtry = 4,
+                           nodesize = best_nodesize,
+                    method = "class",
+                    data = train_data)
+  
+  preds_rf <- predict(rf_model, newdata = test_data, type = "class")
+
+  accuracy_rf <- confusionMatrix(factor(preds_rf), 
+                                 factor(test_data$Edible))$overall[1]
+  
+  accuracies_rf[i] <- accuracy_rf
+}
+```
+
+```{r, echo=FALSE}
+
+combination_labels_rf <- as.character(combination_labels_rf)
+
+rf_list_accuracies <- 
+  data.frame(Combinations = combination_labels_rf, Accuracies = accuracies_rf)
+
+sorted_rf_list_accuracies <- 
+  rf_list_accuracies[order(-rf_list_accuracies$Accuracies), ]
+
+
+kable(sorted_rf_list_accuracies, caption="List of all 31 input combinations and the predictive accuracy, in decending order, of the RF model when the combination of inputs were used.")
+
+
+```
+
+```{r, echo=FALSE, fig.cap="Plot of the predicted accuracy from the RF model when each combination of inputs were used."}
+#11
+
+library(stringr)
+ 
+rep_str = c('CapShape'='CSp','CapColor'='CC','CapSurface'='CSf', "Height"="H", 
+            "Odor"="O")
+
+input_combinations_rf.try <- lapply(input_combinations_rf, function(x) {
+  str_replace_all(x, rep_str)
+})
+
+input_combinations_rf.try <- 
+  sapply(input_combinations_rf.try, function(x) paste(x, collapse = ", "))
+
+layout(matrix(c(1, 2), nrow = 1, ncol = 2), widths = c(4, 1))
+
+par(mar = c(8, 4, 4, 1) + 0.1)  
+
+plot(1:length(input_combinations_rf), accuracies_rf, type = "b", 
+     xlab = "",  
+     ylab = "Accuracy", 
+     main = "Accuracy vs. Input Variable Combinations", 
+     xaxt = "n",
+     col = "saddlebrown",
+     las = 1,
+     pch = 16,
+     cex.main = 1)
+
+axis(1, at = 1:length(input_combinations_rf.try), 
+     labels = input_combinations_rf.try, 
+     las = 2, cex.axis = 0.7)  
+
+grid()
+
+mtext("Baseline Accuracy", 
+      side = 4, line = 1, at = accuracy_initial[1], cex = 0.5, las = 1)
+
+mtext("Input Variable Combinations", side = 1, line = 5, cex = 0.8)
+
+abline(h = accuracy_initial[1], col = "orangered2", lty = 1, lwd = 1)
+
+par(mar = c(6, 0, 4, 2) + 0.1)  
+
+plot.new()
+
+legend("bottomleft", 
+       legend = c("CSf: CapSurface","CSp: CapShape", "CC: CapColor","H: Height","O: Odor" ), 
+       lty = c(1, 1), pch = NA, lwd = NA, cex = 0.55, xpd = TRUE)
+
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+library(randomForestExplainer)
+library(ggplot2)
+
+rf_model <- randomForest(Edible ~ CapShape + CapColor + CapSurface + Height + 
+                           Odor,
+                 ntree = best_ntree,
+                 mtry = 4,
+                 nodesize = best_nodesize,
+                 method = "class",
+                 data = mushroom,
+                 importance = TRUE)
+
+```
+
+```{r, echo=FALSE, fig.cap="Bar plot of the Mean Decrease Gini value for each input variable. The model this was evaluated from is using the optimised parameter values."}
+#12
+
+importance_data <- as.data.frame(importance(rf_model))
+importance_data$Variable <- rownames(importance_data)
+
+ggplot(importance_data, aes(x = reorder(Variable, MeanDecreaseGini), 
+                            y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "saddlebrown") +
+  coord_flip() +
+  labs(title = "Variable Importance", x = "Variables", 
+       y = "Mean Decrease Gini") +
+  theme_minimal()
+
+```
+
+##### Analysis of Feature Importance Using Mean Decrease Gini in Random Forest Models
+
+The Mean Decrease Gini, also known as Gini Importance, is a measure of the importance of each variable in a Random Forest (RF) model. This metric indicates how each input contributes to the model's decision-making process, with higher values signifying greater importance to the model's output.
+
+##### Key Findings on Feature Importance
+
+Similar to the Decision Tree (DT) model, the *Odor* variable had the most significant impact on the RF model's predictive accuracy. This conclusion is supported by various metrics, including Table 1, Figure 11, and Figure 12. Other features such as *CapColor*, *CapShape*, and *CapSurface* also demonstrated some influence, as combinations including these inputs yielded high predictive accuracy and the next highest Mean Decrease Gini scores.
+
+Interestingly, when all inputs were included in the model, the overall accuracy was slightly higher than models excluding *Height*. This finding contradicts the Mean Decrease Gini measurement for *Height* (Figure 12), which indicates that *Height* has minimal influence on the model's output. Additionally, models excluding *Height* did not show an accuracy increase compared to those with the same input combinations but with *Height* included. For instance, models with the inputs *CapSurface, CapColor, Odor* and *CapSurface, CapColor, Odor, Height* both achieved an accuracy of 0.9913793.
+
+These observations suggest that the tuned parameters may be causing the RF model to overfit, thereby inflating the importance of some variables.
+
+##### Optimal Parameter Selection
+
+Through the tuning process, it was determined that setting `mtry` (the number of variables randomly sampled at each split) to 2 appeared to be the best choice, even though `mtry = 4` resulted in a slightly higher accuracy score. Using `mtry = 4` risks overfitting, as indicated by a warning when `mtry = 5` was used. Choosing `mtry = 2` helps ensure no single feature dominates the splits, promoting a more generalised model.
+
+This adjustment aim to create a balanced model that avoids overfitting by ensuring it does not overly rely on any single feature. Consequently, the model is more likely to generalise well to unseen data, maintaining robust predictive performance.
+
+&nbsp;
+
+```{r, echo=FALSE}
+best_combination_rf <- 
+  as.character(sorted_rf_list_accuracies[2, "Combinations"])
+
+best_inputs_rf <- unlist(strsplit(best_combination_rf, ", "))
+
+model_input_rf <- paste(best_inputs_rf, collapse = " + ")
+
+formula_rf <- as.formula(paste("Edible ~", model_input_rf))
+```
+
+**Therefore, the maximised RF model will have a change of its
+hyperparameters to better suit predicting unseen data, and include all
+the inputs except Height.**
+
+```{r}
+best_rf <- randomForest(formula_rf,
+                 ntree = best_ntree,
+                 mtry = 2,
+                 nodesize = best_nodesize,
+                 method = "class",
+                 data = train_data,
+                 importance = TRUE)
+
+preds_3 <- predict(best_rf, 
+                       newdata = test_data, 
+                       type = "class")    
+```
+
+```{r, echo=FALSE, results='asis'}
+accuracy_3 <- confusionMatrix(factor(preds_3), factor(test_data$Edible))
+
+accuracy_3 <- accuracy_3$overall[1:2]
+
+message<-paste0("The predictive accuracy of the RF method using the best combination of inputs and parameters is ", 
+             signif(accuracy_3[1],5))
+
+cat(message, "\n")
+```
+
+```{r, echo=FALSE, results='asis'}
+message <- if (accuracy_initial[1] > accuracy_3[1]){
+  paste0("The accuracy of the baseline RF model is higher than the accuracy of the best RF model.")
+  
+}else{
+  paste0("The accuracy of the best RF model is higher than the accuracy of the baseline RF model.")
+  }
+
+cat(message, "\n")
+```
+
+```{r, echo=FALSE, results='asis'}
+message <- if (accuracy_3[1] < accuracy_2[1]){
+  paste0("The accuracy of the best RF model is lower than the accuracy of the best DT model.")
+  
+}else{
+  paste0("The accuracy of the best RF model is higher than the accuracy of the best DT model. Therefore, the tuning of the hyperparameters and feature selection were effective in maximising the RF model.")
+}
+
+cat(message, "\n")
+
+```
+
+The results of this shows that using a RF model with select inputs and
+parameters out performed the DT model even when the best inputs and
+parameters for this method were used. This is an expected outcome as the
+the RF is an ensemble of DT models. By aggregating different DTs, the
+probability that the majority will predict correctly, or accurately,
+increases as stated by Condorcet's Jury Theorem.
+
+ 
+
+```{r,echo=FALSE, fig.cap="Decision Tree diagram using the DT model with the highest accuracy. As Several models have the same highest accuracy, the model with all the inputs were used."}
+#13
+
+options(repr.plot.width = 10, repr.plot.height = 20)
+
+prp(best_dt,
+    type = 2,                 # Type of plot (0-4)
+    extra = 6,              # Display extra information (node number, class, probability, etc.)
+    under = TRUE,             # Display node numbers under the boxes
+    faclen = 0,               # Show full names for factor levels
+    varlen = 0,               # Show full names for variables
+    #shadow.col = "gray",      # Shadow color
+    box.col = c("burlywood", "indianred")[best_dt$frame$yval],  # Color the nodes by class
+    border.col = "coral4",  # Border color for the boxes
+    #split.cex = 1,          # Size of the split text
+    #nn.cex = 0.8,             # Size of the node numbers
+    branch.lwd = 3,           # Width of the branch lines
+    branch.col = "darkgreen", # Color of the branch lines
+    main = "Decision Tree", # Main title
+    #cex.main = 1.2,           # Size of the main title
+    split.box.col = "seashell", # Color of the split text box
+    split.border.col = "darkred", # Border color for the split text box
+    nn.border.col = "coral4" , # Border color for the node number box
+    digits = 5
+)
+```
+
+##### Analysis of the Decision Tree Model for Mushroom Classification
+
+The decision tree model classifies mushrooms as either *Edible* or *Poisonous* based on various features. The tree is constructed using specific parameters designed to control its complexity and depth, striking a balance between underfitting and overfitting.
+
+##### Key Features and Model Structure
+
+The most influential features in the model are *Odor*, *CapColor*, *CapShape*, and *CapSurface*, while *Height* was excluded due to its lack of importance in predicting the mushroom's edibility. This supports the notion that *Height* does not significantly impact the classification outcome.
+
+- Root Node: The root node of the tree is *Odor*, indicating it is the most critical feature for distinguishing between *Edible* and *Poisonous* mushrooms.
+
+- Leaf Nodes: Each leaf node in the tree shows the proportion of correctly classified samples, providing a quantitative measure of the model's confidence. Although some leaf nodes achieve 100% correct classification, indicating clear distinctions between *Poisonous* and *Edible* mushrooms, others still misclassify some samples. In practical terms, this could lead to dangerous misclassifications of *Poisonous* mushrooms as *Edible*, highlighting a potential risk in real-world applications.
+
+##### Interpretability and Complexity
+
+The decision tree is relatively easy to understand and interpret. For instance, a straightforward rule derived from the tree is that if a mushroom has an *Odor* of *Almond*, *Anise*, or *None*, it is classified as *Edible*; otherwise, it is classified as *Poisonous*. This visual representation aids those who may not be familiar with the underlying generation process in comprehending the model's decision-making logic.
+
+However, the model's high complexity is evident from its numerous branches and considerable depth. This intricacy can make the tree challenging to interpret, particularly for non-experts. While the detailed breakdown provided by the tree is thorough, the extensive number of splits and deep nodes may obscure clarity.
+
+##### Cross-Validation and Model Tuning
+
+Determining whether the model has been overfitted or underfitted requires cross-validation for each model configuration. Although the parameters were tuned to optimise predictive performance, they may not necessarily represent the most optimal values. Cross-validation would provide a more reliable assessment of the model's generalisability and help in fine-tuning the parameters to achieve the best balance between accuracy and simplicity.
+
+
+&nbsp;
+
+
+# Task 2
+
+```{r, echo=FALSE}
+set.seed(123)
+train_indices <- createDataPartition(mushroom$Edible, p = 0.8, list = FALSE)
+train_data <- mushroom[train_indices, ]
+test_data <- mushroom[-train_indices, ]
+```
+
+To determine which model, either the optimised DT model or the optimised RF model,
+has the best predictive accuracy, k-fold cross validation will be
+performed. This will also help determine whether the models have been over-
+or under-fitted.
+
+ 
+
+## Cross Validation
+
+Functions are created to conduct k-fold cross validation for both a
+decision tree and random forest. Within the formulas, both will use the
+tune parameter values settled on from task 1.
+
+```{r}
+#Function for k-fold cross validation for decision tree
+cv_decision_tree <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- rpart(formula, data = train_data_cv, method = "class", 
+                   cp = best_cp, 
+                   maxdepth = best_maxdepth, 
+                   minbucket = best_maxdepth, 
+                   minsplit = best_minsplit)
+    
+    preds <- predict(model, newdata = test_data_cv, type = "class")
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    accuracies[i] <- accuracy
+  }
+  
+  mean(accuracies)
+}  
+
+
+#Function for k-fold cross validation for random forest
+cv_random_forest <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- randomForest(formula, data = train_data_cv, 
+                          ntree = best_ntree, 
+                          mtry = 2, 
+                          nodesize = best_nodesize)
+    
+    preds <- predict(model, newdata = test_data_cv)
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    
+    accuracies[i] <- accuracy
+  }
+  
+  mean(accuracies)
+}
+```
+
+```{r, echo=FALSE}
+best_dt_models_cv <- as.character(sorted_dt_list_accuracies[3,"Combinations"])
+best_rf_models_cv <- as.character(sorted_rf_list_accuracies[2,"Combinations"])
+
+best_all_models_cv <- c(best_dt_models_cv, best_rf_models_cv)
+
+input_combinations_best <- c(best_all_models_cv[1], tail(best_all_models_cv, 1))
+input_combinations_best <- strsplit(best_all_models_cv, ", ")
+
+accuracies_best <- numeric(length(input_combinations_best))
+combination_labels_best <- character(length(input_combinations_best))
+model_types <- character(length(input_combinations_best))
+```
+
+Running the k fold cross validation.
+
+```{r, warning=FALSE}
+for (i in seq_along(input_combinations_best)) {
+  input_combinations_best_i <- input_combinations_best[[i]]
+  formula_best <- as.formula(paste("Edible ~", paste(input_combinations_best_i, 
+                                                     collapse = " + ")))
+  combination_labels_best[i] <- paste(input_combinations_best_i, 
+                                      collapse = ", ")
+  
+  if (i <= 1) {
+    # Decision Tree Cross-Validation
+    accuracies_best[i] <- cv_decision_tree(mushroom, formula_best, k = 10)
+    model_types[i] <- "Decision Tree"
+  } else {
+    # Random Forest Cross-Validation
+    accuracies_best[i] <- cv_random_forest(mushroom, formula_best, k = 10)
+    model_types[i] <- "Random Forest"
+  }
+}
+```
+
+```{r, echo=FALSE}
+
+# Create a data frame to store results
+results_best <- data.frame(Combination = combination_labels_best, 
+                           Accuracy = accuracies_best, 
+                           ModelType = model_types)
+
+# Sort by accuracy in descending order
+sorted_results_best <- results_best[order(-results_best$Accuracy), ]
+
+kable(sorted_results_best, caption = "Table of the accuracy of the models after cross validation, in descending order." )
+
+```
+
+It appears that the RF model has marginally better accuracy than the DF
+model. To evaluate whether this difference is statistically significant,
+a paired t-test will be used.
+
+ 
+
+## Statistical Test for Significance
+
+The statistical difference between the unchanged DT and RT models and the optimised models will be considered. 
+
+To recap:
+
+- Unchanged/ basic DT Model: All inputs and default parameters
+
+- Unchanged/ basic RF Model: All inputs and default parameters
+
+- Optimised DT Model: All inputs except *Height* and tuned parameters 
+
+- Optimised RF Model: All inputs except *Height* and tuned parameters 
+
+&nbsp;
+
+```{r, echo=FALSE}
+
+#Depending on what you're testing, change what you pull out from the sorted_results_best. Everything else should be kept the same.
+
+basic_dt <- as.character("CapSurface, CapColor, CapShape, Odor, Height")
+basic_rf <- as.character("CapSurface, CapColor, CapShape, Odor, Height")
+
+best_all_models_cv <- as.character(sorted_results_best[1:2,"Combination"])
+
+all_models <- c(basic_dt, basic_rf, best_all_models_cv)
+
+input_combinations_best <- strsplit(all_models, ", ")
+
+accuracies_best <- numeric(length(input_combinations_best))
+combination_labels_best <- character(length(input_combinations_best))
+
+formulas_best <- vector("list", length(input_combinations_best))
+
+# Loop through each combination to create formulas and labels
+for (i in seq_along(input_combinations_best)) {
+  variables <- input_combinations_best[[i]]
+  formulas_best[[i]] <- as.formula(paste("Edible ~", paste(variables, 
+                                                           collapse = " + ")))
+  combination_labels_best[i] <- paste(variables, collapse = ", ")
+}
+
+# Accessing the formulas to see you're pulling out the models you want. Don't forget what models these are.
+
+#formulas_best[[1]]
+#formulas_best[[2]]
+#formulas_best[[3]]
+#formulas_best[[4]]
+
+```
+
+```{r, echo=FALSE}
+
+#Different functions as before, these allows for multiple accuracy predictions to be stored rather than the averaged one. This allows T test to be done.
+#Only change the parameters and not remove any, if you're doing default, change it to default values.
+
+cv_decision_tree <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  all_predictions <- list()
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- rpart(formula, data = train_data_cv, method = "class", 
+                   cp = best_cp, 
+                   maxdepth = best_maxdepth, 
+                   minbucket = best_minbucket, 
+                   minsplit = best_minsplit)
+    
+    preds <- predict(model, newdata = test_data_cv, type = "class")
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    accuracies[i] <- accuracy
+    all_predictions[[i]] <- preds
+  }
+  
+  list(accuracies = accuracies, predictions = all_predictions)
+}
+
+##
+
+cv_random_forest <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  all_predictions <- list()
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- randomForest(formula, data = train_data_cv, 
+                          ntree = best_ntree, 
+                          mtry = 2, 
+                          nodesize = best_nodesize)
+    
+    preds <- predict(model, newdata = test_data_cv)
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    accuracies[i] <- accuracy
+    all_predictions[[i]] <- preds
+  }
+  
+  list(accuracies = accuracies, predictions = all_predictions)
+}
+
+##
+
+cv_decision_tree_basic <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  all_predictions <- list()
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- rpart(formula, data = train_data_cv, method = "class")
+    
+    preds <- predict(model, newdata = test_data_cv, type = "class")
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    accuracies[i] <- accuracy
+    all_predictions[[i]] <- preds
+  }
+  
+  list(accuracies = accuracies, predictions = all_predictions)
+}
+
+##
+
+cv_random_forest_basic <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  all_predictions <- list()
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- randomForest(formula, data = train_data_cv)
+    
+    preds <- predict(model, newdata = test_data_cv)
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    accuracies[i] <- accuracy
+    all_predictions[[i]] <- preds
+  }
+  
+  list(accuracies = accuracies, predictions = all_predictions)
+}
+
+```
+
+Each of the four models will be cross validated.
+```{r, warning=FALSE}
+
+result_basic_dt <- cv_decision_tree_basic(mushroom, formulas_best[[1]], k = 10)
+
+result_basic_rf <- cv_random_forest_basic(mushroom, formulas_best[[2]], k = 10)
+
+result_dt <- cv_decision_tree(mushroom, formulas_best[[3]], k = 10)
+
+result_rf <- cv_random_forest(mushroom, formulas_best[[4]], k = 10)
+```
+
+```{r, echo=FALSE}
+results_together <- c(mean(result_basic_dt$accuracies), 
+                      mean(result_basic_rf$accuracies), 
+                      mean(result_dt$accuracies), 
+                      mean(result_rf$accuracies))
+
+results_together <- data.frame(Model = c("Basic DT", "Basic RF", "Optimised DT", "Optimised RF"),
+  Accuracy = results_together, 
+                               Model_type = c("Decision Tree", "Random Forest", "Decision Tree", "Random Forest"))
+
+kable(results_together, caption = "Averaged accuracy of each model after k-fold cross validation.")
+
+```
+
+```{r, echo=FALSE, fig.cap="Plot of the averaged accuracy scores of each predictive model after cross validation."}
+#14
+
+model_names = c("Basic DT", "Basic RF","Optimised DT",
+                "Optimised RF")
+
+colours = c("saddlebrown", "sienna3", "peru","tan2")
+
+plot(1:length(input_combinations_best), results_together$Accuracy, col=colours, pch=19,
+     main = "Accuracy of the Predictive Models",
+xlab="Model", ylab="Accuracy",
+xaxt = "n", ylim = range(results_together$Accuracy), yaxt = "n")
+  axis(side = 1, at = c(1,2,3,4), labels = model_names)
+axis(2, las = 1, cex.axis = 0.7)
+
+
+```
+
+```{r,echo=FALSE, warning=FALSE}
+
+combination_labels_best <- character(length(input_combinations_best))
+model_types <- character(length(input_combinations_best))
+accuracies_best <- numeric(length(input_combinations_best))
+
+winner <- numeric(10)
+
+for (iteration in 1:10) {
+  for (i in seq_along(input_combinations_best)) {
+    input_combinations_best_i <- input_combinations_best[[i]]
+    formula_best <- as.formula(paste("Edible ~", paste(input_combinations_best_i, 
+                                                       collapse = " + ")))
+    combination_labels_best[i] <- paste(input_combinations_best_i, collapse = ", ")
+    
+    if (i == 1) {
+      result <- cv_decision_tree_basic(mushroom, formula_best, k = 10)
+    } else if (i == 2) {
+      result <- cv_random_forest_basic(mushroom, formula_best, k = 10)
+    } else if (i == 3) {
+      result <- cv_decision_tree(mushroom, formula_best, k = 10)
+    } else {
+      result <- cv_random_forest(mushroom, formula_best, k = 10)
+    }
+    
+    # Debugging: Print the result to check its structure
+    #print(result)
+    
+    # Extract the accuracy value
+    accuracy <- as.numeric(result$accuracies)
+    
+    if (length(accuracy) == 0) {
+      stop("The accuracy value is missing in the result object")
+    }
+    
+    accuracies_best[i] <- accuracy
+    
+  }
+  
+  # Debugging: Print accuracies_best to check its content
+ # print(accuracies_best)
+  #print(class(accuracies_best))
+  
+  # Ensure accuracies_best is numeric
+  if (!is.numeric(accuracies_best)) {
+    stop("accuracies_best is not numeric")
+  }
+  
+  # Find the index of the maximum accuracy
+  winner[iteration] <- which.max(accuracies_best)
+}
+
+```
+
+```{r, echo=FALSE, fig.cap="Plot of the frequency at which each model is chosen as the best predictive model, i.e. had the highest accuracy. Each model is iterated the equivalent to 50 times."}
+#15
+
+model_names = c("Basic DT", "Basic RF","Optimised DT",
+                "Optimised RF")
+
+colours = c("saddlebrown", "sienna3", "peru","tan2")
+
+hist(winner, breaks = seq(0, 4,1), 
+     xlab="Model", ylab="Frequency", 
+     main= "Histogram of Cross Validation Outcomes", col = colours,
+     xaxt = "n")
+axis(side = 1, at= c(0.5,1.5,2.5,3.5), labels = model_names)
+```
+
+```{r, echo=FALSE}
+#Pull out the accuracy values for (paired) t test
+
+dt_basic_accuracy <- result_basic_dt$accuracies
+rf_basic_accuracy <- result_basic_rf$accuracies
+
+dt_accuracy <- result_dt$accuracies
+rf_accuracy <- result_rf$accuracies
+```
+
+Paired t tests across different pairs of the chosen models.
+```{r}
+
+#Optimised DT model vs Optimised RF model
+t_test_results_best <- t.test(dt_accuracy, rf_accuracy, paired = TRUE)
+
+#Unchanged DT model vs Unchanged RF model
+t_test_results_basic <- t.test(dt_basic_accuracy, rf_basic_accuracy, 
+                               paired = TRUE)
+
+#Optimised DT model vs Unchanged DT model
+t_test_results_dt <- t.test(dt_basic_accuracy, dt_accuracy, paired = TRUE)
+
+#Optimised RF model vs Unchanged RF model
+t_test_results_rf <- t.test(rf_basic_accuracy, rf_accuracy, paired = TRUE)
+
+#Optimised RF model vs Unchanged DT model
+t_test_results_basic_dt_rf <- t.test(dt_basic_accuracy, rf_accuracy, 
+                                     paired = TRUE)
+
+#Optimised DT model vs Unchanged RF model
+t_test_results_basic_rf_dt <- t.test(rf_basic_accuracy, dt_accuracy, 
+                                     paired = TRUE)
+
+
+
+```
+
+```{r, echo=FALSE, results='asis'}
+
+pval_best <- t_test_results_best$p.value
+pval_basic <- t_test_results_basic$p.value
+pval_dt <- t_test_results_dt$p.value
+pval_rf <- t_test_results_rf$p.value
+pval_basic_dt_rf <- t_test_results_basic_dt_rf$p.value
+pval_basic_rf_dt <- t_test_results_basic_rf_dt$p.value
+
+CI_best <- t_test_results_best$conf.int[1:2]
+CI_basic <- t_test_results_basic$conf.int[1:2]
+CI_dt <- t_test_results_dt$conf.int[1:2]
+CI_rf <- t_test_results_rf$conf.int[1:2]
+CI_bdt_rf <- t_test_results_basic_dt_rf$conf.int[1:2]
+CI_brf_dt <- t_test_results_basic_rf_dt$conf.int[1:2]
+
+Lower_CI = c(CI_best[1],CI_basic[1],CI_dt[1],CI_rf[1],CI_bdt_rf[1], CI_brf_dt[1])
+Upper_CI = c(CI_best[2],CI_basic[2],CI_dt[2],CI_rf[2],CI_bdt_rf[2], CI_brf_dt[2])
+
+
+pval_all <- data.frame(Model_1 = c("Optimised DT", "Basic DT", "Optimised DT","Optimised RF","Optimised RF","Optimised DT"), Model_2 = c("Optimised RF", "Basic RF", "Basic DT", "Basic RF","Basic DT", "Basic RF"), P_value = c(pval_best,pval_basic,pval_dt,pval_rf,pval_basic_dt_rf,pval_basic_rf_dt), Lower_CI = Lower_CI, Upper_CI = Upper_CI, Significant = c("No", "Yes", "Yes", "No", "Yes", "No"))
+
+kable(pval_all, caption = "P-values between the models. Calculated through t tests, and using the accuracy scores from cross validation. [CI: Confidence Interval].")
+```
+
+
+##### Comparison and Optimisation of Decision Tree and Random Forest Models for Predicting Mushroom Edibility
+
+To identify the best model for predicting mushroom edibility with the highest accuracy, both basic Decision Tree (DT) and Random Forest (RF) models were optimised by selecting the best parameters and set of inputs. The optimisation process involved cross-validation, iterative cross-validation, and statistical analysis using t-tests. Based on these methods, it was determined that the **optimised Random Forest (RF) model** provided the best accuracy (Figure 15).
+
+##### Basic Model Performance
+
+Both the basic DT and RF models were initially fitted using all available inputs (*CapShape*, *CapColor*, *CapSurface*, *Height*, and *Odor*) with default parameters:
+
+- The basic DT model achieved an accuracy of approximately 98.89%.#
+
+- The basic RF model achieved a higher accuracy of approximately 99.32%.
+
+A paired t-test confirmed that the difference in accuracy between the basic DT and RF models was statistically significant (Table 5).
+
+##### Decision Tree Optimisation
+
+The DT model was optimised by tuning its parameters through cross-validation. Specifically:
+- Reducing the complexity parameter (CP) to less than 0.0009 improved accuracy.
+- Feature selection revealed that *Height* did not enhance the model's performance, whereas *Odor* was the most influential feature.
+
+The optimised DT model, which included all inputs except *Height* and utilised the tuned parameters, significantly improved predictive accuracy, reaching approximately 99.20%.
+
+##### Random Forest Optimisation
+
+Similarly, the RF model was optimised by cross-validating its parameters:
+
+- Feature importance analysis showed that *Height* had the least impact, while *Odor* had the most.
+
+- Consequently, the optimised RF model excluded *Height*.
+
+This optimised RF model initially increased accuracy to approximately 99.38%. However, subsequent cross-validation showed a slight decrease in accuracy (Figure 14), indicating possible overfitting. Despite this, iterative cross-validation consistently identified the optimised RF model as the best performer in most iterations.
+
+##### Comparative Analysis
+
+The difference in accuracy between the optimised DT and RF models was marginal and not statistically significant, suggesting that neither model was significantly superior to the other in terms of predictive accuracy.
+
+##### Feature Importance and Model Interpretation
+
+Removing *Height* and tuning parameters did not significantly affect accuracy but helped simplify model interpretation by reducing input variables. Mean Decrease Gini tests (Figure 7 and Figure 12) indicated that *Odor* was the most influential input, followed by *CapColor*, *CapShape*, and *CapSurface*. This simplification can enhance the model's interpretability and reduce the risk of overestimating the importance of influential inputs.
+
+## Conclusion
+
+The optimised RF model is considered superior to the optimised DT model due to its robustness to changes in data and slightly higher accuracy. Despite the high accuracy of all models (over 99%), the potential consequences of misclassifying a poisonous mushroom as edible underscore the importance of striving for the highest possible accuracy. Therefore, while both the basic RF, optimised DT and RF models are highly accurate, the optimised RF model is recommended for its better overall performance and robustness.
+
