@@ -1,0 +1,293 @@
+---
+title: "Lindgren Group: Bioinformatician Work Test"
+author: "Hazel.A.Fernando"
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  word_document: default
+---
+```{r,echo=FALSE, warning=FALSE}
+#install.packages("vcfR")
+#install.packages("data.table")
+#install.packages(c("data.table", "qqman", "plink"))
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(vcfR)
+library(data.table)
+library(qqman)
+library(kableExtra)
+```
+
+# Methodology
+
+## Quality Control
+
+Used PLINK to perform QC.
+
+The genotype and phenotype data were converted into into PLINK compatible file formats.
+
+Note, for the phenotypic data to be compatible for PLINK, the sample column was duplicated and given the necessary column names, IID and FID. 
+
+```{r, echo=TRUE, results='hide'}
+vcf_file <- "StatGen_work_test.vcf.gz"
+vcf_data <- read.vcfR(vcf_file)
+
+data <- "data"  
+
+system(paste("plink --vcf", vcf_file, "--make-bed --out", data))
+
+```
+
+```{r}
+phenotype_file <- "StatGen_work_test_phenotype.txt"
+phenotype_data <- fread(phenotype_file)
+
+write.table(phenotype_data, file = "phenotype_data.plink.txt", quote = FALSE, 
+            row.names = FALSE, col.names = FALSE, sep = "\t")
+```
+
+Combined the genotypic and phenotypic data together.
+```{r,echo=TRUE, results='hide'}
+system(paste("plink --bfile", data, 
+             "--pheno phenotype_data.plink.txt --make-bed --out combined_data"))
+```
+
+### QC steps 
+
+The standard QC steps were taken to filter out low quality variants and individuals. 
+
+```{r}
+combined_data <- "combined_data"
+```
+
+1. Removed SNPs missingness $> 3\%$.
+```{r,echo=TRUE, results='hide'}
+system(paste("plink --bfile", combined_data, 
+             "--geno 0.03 --make-bed --out QC1"))
+```
+
+2. Removed individuals/samples with missingness $> 3\%$.
+```{r, echo=TRUE, results='hide'}
+system(paste("plink --bfile QC1 --mind 0.03 --make-bed --out QC2"))
+```
+
+3. Removed SNPs with a MAF $< 1\%$.
+```{r,echo=TRUE, results='hide'}
+system(paste("plink --bfile QC2 --maf 0.01 --make-bed --out QC3"))
+```
+
+4. Removed SNPs with a p-value for HWE $< 1 \times 10^{-6}$
+```{r, echo=TRUE, results='hide'}
+system(paste("plink --bfile QC3 --hwe 1e-6 --make-bed --out QC4"))
+```
+ 
+&nbsp;
+
+## Association Analysis
+
+Used PLINK to perform GWAS analysis. 
+
+```{r}
+filtered_data <- "QC4"
+
+gwas_results <- "gwas_results"
+```
+
+```{r, echo=TRUE, results='hide'}
+system(paste("plink --bfile", filtered_data, "--allow-no-sex", "--assoc --out", 
+             gwas_results))
+```
+
+```{r}
+gwas_results <- fread("gwas_results.qassoc")
+```
+
+Filtered the GWAS results to only include GWS SNPs with p-value $< (5 \times 10^{-8})$.
+```{r}
+sig_snps <- gwas_results[gwas_results$P < 5e-8,]
+
+number_sig_signals <- nrow(sig_snps)
+```
+
+```{r,echo=FALSE}
+print(paste("Number of significant independent signals:", number_sig_signals))
+```
+
+```{r}
+sig_snps 
+```
+
+```{r}
+gws_snps <- gwas_results$SNP[gwas_results$P < 5e-8]
+
+gwas_results$highlight <- ifelse(gwas_results$P < 5e-8, "red", "black")
+
+manhattan(gwas_results,
+          chr = "CHR",        
+          bp = "BP",          
+          snp = "SNP",        
+          p = "P",            
+          genomewideline = -log10(5e-8),
+          suggestiveline = FALSE, 
+          col = "blue4",
+          main = "Manhattan Plot Highlighting GWS SNPs",
+          ylim = c(0, max(-log10(gwas_results$P), na.rm = TRUE) + 2))
+
+with(gwas_results[gwas_results$P < 5e-8,], {
+  points(BP, -log10(P), col = "red", pch = 19)
+})
+```
+Manhattan plot of the GWAS results of the index variants along chromosome 15. GWS < 5e-08 is marked by the red line. GWS independent loci are highlight as blue. -log10(p) values are plotted against the chromosomal positions.
+
+
+Aggregated the significant signals together to identify independent signals to eliminate related signals that possibly arise from LD. 
+
+The signals with p-value $< 5 \times 10^{-8}$ are clumped together based on $R^2$ threshold of above 0.1 (moderate LD) and a standard distance of 250kb.  
+```{r, echo=TRUE, results='hide'}
+system(paste("plink --bfile", filtered_data,"--allow-no-sex", 
+             "--clump gwas_results.qassoc --clump-p1 5e-8 --clump-r2 0.1 
+             --clump-kb 250 --out clumped_results"))
+
+clumped_results <- fread("clumped_results.clumped")
+
+n_independent_signals <- nrow(clumped_results)
+```
+
+```{r, echo=FALSE}
+print(paste("Number of independent signals:", n_independent_signals))
+```
+
+```{r}
+clumped_results
+```
+
+&nbsp;
+
+# Short Summary Report 
+
+The raw genotypic data was first converted from VCF format to PLINK compatible formats. Concurrently, the phenotypic data was manually reformatted to ensure compatibility with PLINK, which involved adding Family ID (FID) and Individual ID (IID) columns and contains the same sample identifier information. The genotypic and phenotypic datasets were then combined and prepared for quality control (QC).
+
+An initial review of the datasets revealed the following: there were 1,100 single nucleotide polymorphisms (SNPs) and 10,000 individual samples, all variants were from chromosome 15, and the sex information for both variants and individuals was unspecified. The phenotypic data was quantitative.
+
+Standard QC filters were applied using PLINK$^{[1]}$ to exclude low-quality or poorly genotyped variants and individuals. Specifically, SNPs and individuals with missingness greater than 0.03, minor allele frequency (MAF) less than 0.01, and Hardy-Weinberg Equilibrium (HWE) p-values less than $1 \times 10^{−6}$ were removed.
+
+Sex discrepancy checks were not possible due to the lack of sex information. Relatedness and population stratification analyses were also not performed since the simulated data assumed these factors wouldn't impact the association analysis. In real-world datasets, however, controlling for these is crucial. Normally, a principal component analysis (PCA) would be used to control for population stratification, and relatedness would be addressed to avoid confounding.
+
+Following QC, association analysis was conducted with PLINK$^{[1]}$. Significant SNPs were identified using a genome-wide significance threshold of $5 \times 10^{−8}$. A total of 9 SNPs met this threshold and were considered genome-wide significant (GWS) (Table 1).
+```{r, echo=FALSE}
+
+sig_snps_pval <- data.frame(CHR=sig_snps$CHR,
+                       SNP= sig_snps$SNP, 
+                       BP=sig_snps$BP, 
+                       NMISS=sig_snps$NMISS, 
+                       BETA=sig_snps$BETA,
+                       SE=sig_snps$SE,
+                       R2=sig_snps$R2,
+                       T=sig_snps$T,
+                       P=sig_snps$P)
+
+sig_snps_pval$P <- format(sig_snps_pval$P, scientific = TRUE, trim = TRUE)
+
+
+kable(sig_snps_pval, 
+      caption="Table of the genome-wide significant independent signals. Abbrev: CHR-chromosome, BP-basepair, NMISS-number of missing values, SE-standard error, R2-R squared, T-T statistic, P-p value.")
+```
+
+The analysis uses a GWS threshold of $5 \times 10^{-8}$, which is standard in genome-wide analysis studies (GWAS). However, to more accurately account for multiple testing and the risk of false positives, alternative methods such as a Bonferroni correction or controlling the false discovery rate (FDR) could be considered. 
+
+The Manhattan plot (Figure 1) demonstrates that the dataset is highly focused, with all variants within a specific region on chromosome 15. Notably, all variants are located between $9.90 \times 10^7$bp and $1.015 \times 10^8$bp. The plot highlights 9 significant SNPs, which are marked in orange, with p-values less than $5 \times 10^{-8}$.
+
+```{r, echo=FALSE, fig.cap="Manhattan plot of the GWAS results of the index variants along chromosome 15. GWS < 5e-08 is marked by the red line. GWS independent loci are highlight as orange. -log10(p) values are plotted against an amplified view of the chromosomal positions (chromosome 15 between 9.85e7bp - 1.02e8bp)."}
+
+manhattan(gwas_results,
+          chr = "CHR",        
+          bp = "BP",          
+          snp = "SNP",        
+          p = "P",            
+          genomewideline = -log10(5e-8),
+          suggestiveline = FALSE, 
+          col = "blue4",
+          #pch = 1,
+          main = "Manhattan Plot Highlighting GWS SNPs",
+          ylim = c(0, max(-log10(gwas_results$P), na.rm = TRUE) + 2),
+          xlim = c(9.85e7, 1.02e8))
+
+with(gwas_results[gwas_results$P < 5e-8,], {
+  points(BP, -log10(P), col = "orange", pch = 19)
+})
+```
+
+The QQ plot (figure 2) also suggests that the GWAS analysis has identified several SNPs significantly associated with the phenotype of interest, as indicated by the upward deviation from the expected distribution.
+
+```{r, echo=FALSE, fig.cap="QQ plot of the observed -log10(p) generated by the GWAS analysis against the expected values. The red line shows the expected distribution of SNP p-values under the null hypothesis (disbribution of the expected vs the observed -log10(p) are the same)."}
+
+qq(gwas_results$P)
+title("QQ plot of the expected and observed GWAS p-values")
+```
+
+Each of the 9 GWS independent signals was cross-referenced with existing databases and literature to assess whether these signals had been previously reported. The SNP identifiers (rs number) for each signal were checked across NCBI databases, including PubMed, ClinVar, and dbSNP. Additionally, the GWAS Catalog was queried to determine if these SNPs had been identified in previous GWAS studies.
+
+Of the 9 GWS signals, 8 appear to be novel. The SNP rs72755233, located at chromosome 15:100152748, was an exception. According to the GWAS Catalog, this SNP has been reported in 39 previous GWAS studies$^{[2]}$, and it has also appeared in 12 PubMed published studies. These studies link rs72755233 to various traits, including the risk of pancreatitis$^{[3]}$, height and weight$^{[4]}$, carpal tunnel syndrome$^{[5]}$, and ocular conditions$^{[6][7]}$. Despite these associations, the variant is primarily classified as benign. 
+
+Notably, all the GWS signals were linked to the *ADAMTS17* gene, likely due to their close proximity to this gene. 
+
+A potential next step would be to perform functional annotation of the significant SNPs to investigate their potential regulatory or functional roles.
+
+To ensure the independence of GWS signals and to account for potential linkage disequilibrium (LD), signals located in close proximity were carefully looked at. GWS signals that clustered together were identified using an $R^2$ threshold of 0.1 (indicating moderate LD) and a standard distance of 250 kb. After applying these criteria, only 2 independent GWS signals remained (Table 2).
+
+```{r, echo=FALSE}
+
+clumped_snp_pval <- data.frame(CHR=clumped_results$CHR,
+                               SNP= clumped_results$SNP, 
+                             BP=clumped_results$BP, 
+                             S001=clumped_results$S0001,
+                             SP2=clumped_results$SP2)
+
+kable(clumped_snp_pval, 
+      caption="Table of the grouped genome-wide significant independent signals and associated p-values. Abbrev: CHR-chromosome, BP-basepair, S001-number of SNPs with p-values < 0.001, SP2-list of SNPs clustered into the locus.")
+
+```
+
+One of these signals was the SNP rs72755233, which stood out due to its exceptionally low p-value ($1.341 \times 10^{-80}$). This SNP was retained in the final analysis, not only because of its significant association but also due to the overwhelming statistical evidence, suggesting that it represents a genuine signal rather than one arising from LD with nearby variants (or from the random generation of data). This strong signal is likely the reason why multiple studies have noted and found associations with rs72755233, linking it to various traits and conditions.
+
+However, considering the variants are focused around such a specific region of the chromosome, there's a risk of covering only a limited genomic context. This concentration might lead to an overemphasis on local linkage disequilibrium patterns. Therefore, it may be more appropriate to consider the individual GWS signals as independent signals rather than as part of a clustered locus. By analysing each signal separately, it can better assess their distinct contributions to the phenotype, reducing the risk of conflating nearby variants that may have independent effects.
+
+A limitation of this analysis is the small subset of genome-wide data, which may result in reduced statistical power and increase the risk of false negatives, potentially missing true associations. Expanding the dataset would likely yield reliable findings.
+
+While the simulated data has helped certain aspects of the analysis by providing a controlled environment, it also limits the applicability of the findings to real-world scenarios. In contrast, with real-world data, findings would be validated through the use of additional independent datasets and replication studies. 
+
+To summarise, QC methods were applied to filter the raw genomic and phenotypic data. Subsequently, an association analysis was performed to identify GWS independent signals. A total of 9 significant signals were detected and then compared with the current literature to determine if they had been previously reported in other studies. Out of these, only one signal (rs72755233) was found to have been associated with traits in prior studies.
+
+&nbsp;
+
+### Bibliography 
+
+1. Purcell, S. M. 2009. PMID: 19571811.
+
+2. Sollis, E. 2022. PMID: 36350656.
+
+3. Abaji, R. 2017. PMID: 28574850.
+
+4. Tachmazidou, I. 2017. PMID: 28552196.
+
+5. Wiberg, A. 2019. PMID: 30833571.
+
+6. Simcoe, M. J. 2020. PMID: 32716492.
+
+7. Choquet. H. 2020. PMID: 32528159.
+
+&nbsp;
+
+```{r}
+gc()
+```
+
+```{r}
+length(getLoadedDLLs())
+```
+
+```{r}
+sessionInfo()
+```
