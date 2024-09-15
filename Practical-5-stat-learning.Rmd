@@ -1662,3 +1662,5 @@ Removing *Height* and tuning parameters did not significantly affect accuracy bu
 
 The optimised RF model is considered superior to the optimised DT model due to its robustness to changes in data and slightly higher accuracy. Despite the high accuracy of all models (over 99%), the potential consequences of misclassifying a poisonous mushroom as edible underscore the importance of striving for the highest possible accuracy. Therefore, while both the basic RF, optimised DT and RF models are highly accurate, the optimised RF model is recommended for its better overall performance and robustness.
 
+....
+
