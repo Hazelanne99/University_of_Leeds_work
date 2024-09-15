@@ -1,0 +1,1160 @@
+---
+title: 'Assessed Practical II: Brexit'
+author: "Hazel.A.Fernando - 201202015"
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+On June 23rd, 2016, the UK held a referendum, dubbed 'Brexit,' to decide its EU membership. The unexpected Leave victory surprised many. Cities mostly voted Remain, while smaller towns opted to Leave. England and Wales favored Leave, while Northern Ireland and Scotland preferred Remain. The Guardian presented demographic trends post-referendum, but stopped short of statistical analysis. This practical aims to fill that gap. 
+
+'Brexit' was the pivotal 2016 UK referendum to decide its EU membership. Unexpectedly, the Leave campaign came out victorious. Overall, England and Wales
+had voted Leave, whilst Northern Ireland and Scotland preferred Remain. Cities had mostly voted Remain, while smaller towns opted to Leave. 
+
+The Guardian gather and presented the demographic trends post-referendum, but stopped short of conducting any statistical analysis. This report aims to 
+statistically examine the data to gain deep insight.
+
+&nbsp;
+
+The Guardian's data contains the following input variables for each electoral ward:
+
+-   abc1: proportion of individuals who are in the ABC1 social classes (middle  to upper class)
+
+-   medianIncome: the median income of all residents
+
+-   medianAge: median age of residents
+
+-   withHigherEd: proportion of residents with any university-level education
+
+-   notBornUK: the proportion of residents who were born outside the UK
+
+&nbsp;
+
+Each input variable is normalised: zero is the lowest value and one the highest.
+Normalising the variables makes for better interpretability of the data and any results. 
+
+An electoral ward represents a subdivision of a city or county, grouping areas together with similar population or characteristics. This is to ensure an electoral ward is a good representation of the ward's electoral views.  
+
+&nbsp;
+
+The output variable for the dataset is:
+
+-   voteBrexit
+
+which gives a TRUE/FALSE answer to 'did this electoral ward vote for Brexit?' or 'did more than 50% of the people vote to Leave?'.
+
+
+&nbsp;
+
+
+First the data is called into R.
+```{r, warning=FALSE}
+brexit <- read.csv("brexit.csv")
+```
+
+&nbsp;
+
+The data is inspected for any missing values or duplicated rows, and any
+general discrepancies that could affect later analysis. 
+```{r, echo=FALSE}
+summary(is.na(brexit))
+
+which(duplicated(brexit))
+
+which(brexit<0)
+```
+There were no missing or duplicated values or any inputs that were less than 0, therefore all the inputs can be kept and used for the analysis.
+
+
+&nbsp;
+
+
+# Task 1
+
+*K-means* clustering is an unsupervised learning algorithm used to investigate the information from the data/ inputs. The algorithm forms clusters based on common factors among the inputs. There are three methods to find the optimal number of clusters $(k)$: the elbow curve method, the silhouette analysis, and the gap statistic method.
+
+The elbow method helps find the optimal number of clusters $(k)$ by plotting the within-cluster sum of squares (WSS) for various k values and identifying the "elbow" point where the rate of decrease changes.
+The WSS measures the total variability within each cluster created by the *k-means* algorithm. The goal of *k-means* clustering is to minimise this inter-cluster variability, therefore a smaller WSS means the closer the clusters are and the better the overall clustering performance. 
+
+The silhouette method measures how well a data point fits within its cluster compared to other clusters. It ranges from -1 to 1, where 1 indicates a well-clustered point, -1 suggests misclassification, and values near 0 means overlapping clusters.
+
+The gap statistic method finds the appropriate number of clusters by comparing the within-cluster dispersion of the data to a null reference distribution ($B$). A gap statistic is calculated for each $k$ which is the difference between the observed within-cluster dispersion and the expected within-cluster dispersion under the null reference distribution. If the gap statistic starts to plateau or decrease after reaching a peak, it suggests that the optimal number of clusters has been reached. 
+
+All three methods can be used together so an optimal $k$ value is chosen.
+
+&nbsp;
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(cluster)  # For silhouette analysis
+library(factoextra) #for elbow method
+library(ggplot2)  # For visualisation
+library(ggrepel) # For visualisation
+```
+
+Separate the inputs from the whole dataset.
+```{r}
+brexit_inputs <- brexit[,-6]
+```
+
+
+&nbsp;
+
+Determining the optimal number of clusters using the Elbow method.
+
+The *fviz_nbclust()* function from the *factoextra* package creates a plot of the number of clusters against the total WSS. 
+```{r}
+fviz_nbclust(brexit_inputs, kmeans, method = "wss", linecolor = "darkblue")
+```
+**Figure 1: Elbow Method**
+The plot of total WSS against the number of cluster.
+Although not extremely obvious, the 'elbow' or the sharpest change in direction is seen at 2, indicating the best number of clusters is $k = 2$. 
+
+&nbsp;
+
+Determining the optimal number of clusters using the Silhouette method.
+
+The *fviz_nbclust()* function can also be used to create a plot of the number of clusters but using the *method = silhouette*  rather than the *method = wss* (elbow).  
+```{r}
+fviz_nbclust(brexit_inputs, kmeans, method='silhouette', 
+             linecolor = "firebrick3")
+```
+**Figure 2: Silhouette Method**
+Plot of the average silhouette width (a measure of the quality of the clustering results) against the number of clusters.
+The silhouette method more clearly shows that the optimal cluster is 2 as the the plot shows that $k = 2$ has the closest average silhouette score (Average silhouette width) to 1, and therefore indicating the the best clustering of the points on average. 
+
+&nbsp;
+
+```{r, results='hide'}
+
+gap_stat <- clusGap(brexit, FUNcluster = kmeans, K.max = 10, B = 50)
+
+```
+
+```{r, echo=FALSE}
+plot(gap_stat, main = "Optimal number of clusters", 
+     xlab = "number of clusters k",
+     ylab = "Gap Statisitc",col = "darkblue" )
+abline(v=2, lty = 2, col = "firebrick3")
+
+```
+**Figure 3: Gap Statistic Method**
+Plot of the gap statistic against the number of clusters.
+The gap statistic plot shows a sudden rise at $k = 2$ and a plateau, and then another peak at $k = 8$. However, as the previous two methods have indicated that $k = 2$ is optimal, this will be the conclusion from this gap statistic plot. 
+
+
+
+Based on the elbow (Figure 1), silhouette plots (Figure 2), and gap statistic (Figure 3) above, $k = 2$ is chosen as the optimal number of clusters. 
+
+$nbsp;
+
+*k-means* will now be fitted with the optimal number of clusters, and clustering patterns of the inputs in respect to the output will be visualised in a cluster plot.
+```{r}
+optimal_k <- 2
+km <- kmeans(brexit_inputs, centers = 2)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+cluster_plot <- fviz_cluster(km, data = brexit_inputs, geom = "point", palette = c("firebrick3", "darkblue"),ellipse.type = "convex", 
+             ggtheme = theme_bw()) +
+   ggtitle("K-means Clustering (k = 2)")
+cluster_plot + geom_text_repel(aes(label = rownames(brexit_inputs)))
+```
+**Figure 4: Clustering of the Inputs**
+The cluster plot shows the clustering of the inputs into the 2 clusters. This can be used to investigate any associations or predictive patterns of the output through the way the inputs have been clustered. 
+
+&nbsp;
+
+
+```{r, echo=FALSE}
+cluster_df <- data.frame(brexit_inputs, Cluster = as.factor(km$cluster), 
+                         Vote_Brexit = brexit$voteBrexit)
+
+cluster_df$Vote_Brexit <- as.factor(cluster_df$Vote_Brexit)
+
+levels(cluster_df$Vote_Brexit) <- c("TRUE", "FALSE")
+
+ggplot(cluster_df, aes(x = Cluster, fill = Vote_Brexit)) +
+  geom_bar(position = "fill") +
+  labs(title = "Cluster Distribution by Vote for Brexit") +
+  scale_fill_manual(values = c("FALSE" = "firebrick3", "TRUE" = "darkblue"),
+                    labels = c("Remain", "Leave")) +
+  theme_minimal()
+
+```
+**Figure 5: Cluster Distribution by Vote for Brexit**
+Bar chart of how the votes has separated across the two clusters. Cluster 1 appears to have the majority of the Leave votes, and cluster 2 has the majority of the Remain votes. So each cluster had most likely segregated in this way because the electoral wards that had voted for Leave had similar characteristics, and vice versa for the wards that voted Remain. 
+
+&nbsp;
+
+- Cluster 1: Electoral Wards that voted Leave.
+
+- Cluster 2: Electoral Wards that voted Remain.
+
+&nbsp;
+
+```{r, echo=FALSE, warning=FALSE}
+
+pairs(brexit[,1:5], 
+      col = c("firebrick3", "darkblue")[km$cluster],
+      upper.panel = NULL,)
+```
+**Figure 7: Relationship of the Inputs**
+Scatter plot matrix of the inputs as clustered my *kmeans*.
+Displaying the scatter plots of each input with each other shows that distinct clusters can be 
+observed between certain inputs. 
+Red is cluster 1 and blue is cluster 2.
+
+&nbsp;
+
+An example, electoral wards that have a lower median income as well as a lower rate of receiving higher education are clustered together as shown in Figure 8 (highlighted by the yellow box). This echoes the characteristics of the electoral wards that have voted to Leave (Figure 7).
+```{r, echo=FALSE, warning=FALSE}
+
+Clusters <- km$cluster
+
+cluster_visualisation <- ggplot(brexit, aes(x = medianIncome, y = withHigherEd, 
+                                            color = factor(Clusters))) +
+  geom_point() +
+ geom_rect(aes(xmin = 0 - 0, xmax = 0.5 + 0, ymin = 0-0, ymax = 0.5 + 0),
+              fill = "transparent", color = "gold", size = 1.5) +
+  labs(title = "K-means Clustering of Electoral Wards") +
+  theme_minimal()
+cluster_visualisation + 
+  geom_text_repel(aes(label = rownames(brexit)), color = "grey51") +  
+  scale_color_manual(values = c("1" = "firebrick3", "2" = "darkblue")) 
+
+```
+**Figure 8: Clustering of withHigherEd and medianIncome Variables**
+The scatter plot shows how electoral wards with low percentage of residents with higher education and low median income tend to cluster together into cluster 1 (highlighted by the yellow box), suggesting that wards that exhibited these specific input characteristics tend to vote Leave. 
+
+&nbsp; 
+
+```{r, results='hide', echo=FALSE}
+
+brexit_cluster <- data.frame(brexit, Cluster = as.factor(km$cluster))
+
+brexit_cluster$Electoral_Ward <- as.character(1:344)
+
+brexit_cluster_Leave <- brexit_cluster[brexit_cluster$Cluster == "1", ]
+brexit_cluster_Remain <- brexit_cluster[brexit_cluster$Cluster == "2", ]
+
+figure_8 <- brexit_cluster[brexit_cluster$withHigherEd<0.5 & 
+                               brexit_cluster$medianIncome<0.5,]
+```
+
+```{r, echo=FALSE}
+
+par(mfrow = c(1,1))
+
+plot(brexit_cluster$Electoral_Ward, brexit$withHigherEd, 
+     main = "Electoral Wards By withHigherEd", 
+     ylab = "% With Higher Education",
+     xlab = "Electoral Ward")
+points(brexit_cluster_Leave$Electoral_Ward, brexit_cluster_Leave$withHigherEd, 
+       col = "firebrick3", pch = 20)
+points(figure_8$Electoral_Ward, figure_8$withHigherEd, col = "gold", 
+       pch = 1)
+points(brexit_cluster_Remain$Electoral_Ward, brexit_cluster_Remain$withHigherEd, 
+       col = "darkblue", pch = 20)
+legend(legend = c("Voted Leave", "With Higher Ed < 0.5", "Voted Remain"), 
+       col = c("firebrick3", "gold", "darkblue"), pch = c(20, 1, 20),
+       x = 80, y = max(brexit$withHigherEd), bty = "o", cex = 0.7)
+
+```
+**Figure 9: Distribution of Electoral Wards By withHigherEd**
+The plot shows the distribution of the wards by the percentage of its residents having had higher education. Wards where the percentage of individuals with higher education (% "withHigherEd") is less than 0.5 are marked in yellow, as indicated in Figure 8, where these wards form a distinct cluster. Wards that voted Leave are represented by filled red circles, while wards that voted Remain are depicted by blue triangles. There appears to be significant overlap between wards with a low percentage of individuals with higher education and wards that voted Leave, compared to those that voted Remain. This observation reinforces the clustering of cluster 1 by *kmeans* and suggests that wards with lower education levels are more inclined to vote Leave. 
+
+A similar pattern is evident when examining "medianIncome" (not depicted). Consequently, the clustering of the remaining inputs (Figure 7) serves as predictors of the output. In other words, the clustering of inputs can provide insight into how electoral wards with those particular characteristics voted in the referendum. It can be inferred that cluster 1 (red) and cluster 2 (blue) depicted in Figure 7 likely represent wards that voted for Leave and Remain, respectively.
+
+
+&nbsp;
+
+
+# Task 2
+
+```{r,echo=FALSE}
+
+brexit$voteBrexit <- as.numeric(brexit$voteBrexit)
+```
+
+**Logistic regression model (original) of the dataset using *glm* and the *family type* as binomial as the output is binary.**
+```{r}
+model <- glm(voteBrexit ~ abc1 + notBornUK + medianIncome + medianAge + 
+               withHigherEd , data = brexit, family = "binomial")
+```
+
+&nbsp;
+
+The coefficients of each input. 
+```{r, echo=FALSE}
+coef(model)
+```
+
+```{r,echo=FALSE, results='hide'}
+summary_model <- summary(model)
+
+summary_model$coefficients[,4]
+```
+
+&nbsp;
+
+The magnitude of an input is measured by how large its coefficient is in either the positive or negative direction. A positive coefficient means as one unit of an input increases, the probability of the outcome happening, i.e., the probability of an electoral ward voting Leave, increases. Similarly, a negative coefficient indicates that as one unit of an input increases, the chances of an electoral ward voting Leave decreases. This is also the case in the reverse, if the input decreases by one unit, the likelihood of voting Leave increases. 
+
+&nbsp;
+
+The magnitude (coefficient), direction of each of the inputs and the significance are as below: 
+
+- ABC1: 17.58 in the positive direction, $1.56e^{-9}$
+The higher the social class of the residents, the more likely to vote Leave.
+
+- Median Income: -6.39 in the negative direction, $8.91e^{-4}$
+The lower the median income of the residents, the more likely to vote Leave.
+
+- Median Age: 5.92 in the positive direction, $2.56e^{-5}$
+The higher the median age of the residents, the more likely to vote Leave.
+
+- with Higher Education: -26.74 in the negative direction, $7.52e^{-14}$ 
+The lower the percentage of residents with higher education, the more likely to vote Leave.
+
+- Not Born in the UK: 5.69 in the positive direction, $1.61e^{-3}$
+The higher the proportion of residents not born in the UK, the more likely to vote Leave.
+
+&nbsp;
+
+In summary, electoral wards characterised by higher social class, older age demographics, and a higher proportion of residents born outside the UK were more inclined to vote Leave. Conversely, wards that were more affluent and had higher levels of education were less likely to vote Leave. All coefficients demonstrated significance, with each input's p-value surpassing the threshold of $5e^{-2}$ or 0.05.
+
+The direction of the coefficients mostly supported the predictiveness of the *kmeans* clustering. 
+
+&nbsp;
+
+```{r, echo=FALSE}
+ordered_inputs <- sort(abs(coef(model)), decreasing = TRUE)
+ordered_inputs
+```
+From the fitted coefficients derived from the logistic model, and considering all the coefficients were significant, the inputs with the most influence on the output would have been "abc1" and "withHigherEd" as these had the largest magnitude.
+
+This means the social class and education level of an electoral ward had more sway in whether the ward votes for Leave more than income, age and ethnicity. 
+
+Specifically, the higher the social class and the lower the education level an electoral ward was, the more likely the ward would have voted Leave.
+
+&nbsp;
+
+From the evidence, the order of inputs in decreasing effects are:
+
+- With Higher Education 
+
+- ABC1
+
+- Median Income 
+
+- Median Age
+
+- not Born in the UK
+
+The ordering of the input variables is based on their magnitudes. The coefficients' sizes were directly related to the significance of each input, thereby reinforcing the importance of the order of each input variable.
+
+&nbsp;
+
+Three of the Guardian plots corroborated the findings of the logistic regression analysis. The trends in "medianIncome", "medianAge", and "withHigherEd" coefficients perfectly aligned with the patterns observed in the Guardian plots. However, the "abc1" and "notBornUK" inputs displayed conflicting directions between the logistic regression analysis and the Guardian plots. According to the latter, a lower social class and a lower percentage of residents not born in the UK were associated with a higher likelihood of the electoral ward voting Leave.
+
+Nevertheless, the magnitude derived from the model closely corresponded to the visual strength of the trends observed in the Guardian plots. Particularly, the Guardian plots for '% residents with higher education' and '% residents of ABC1 social grade' exhibited the most pronounced correlation patterns compared to the other input plots, which displayed more scattered data points and appeared less distinct.
+
+
+&nbsp;
+
+
+# Task 3
+
+Factors that may affect the interpretability of the regression coefficients of the fitted model are multicollinearity, outliers, the relationship between the independent variables and the log odds of the output, sample size, the outputs are binary, and inputs are independent.  
+
+multicollinearity occurs when at least two of the input variables are highly correlated, and exhibit strong linear relationships with each other. This causes issues such as interpreting the coefficients, as the high correlation between the inputs makes it difficult to discern the contribution of individual inputs to the output. Additionally, multicollinearity can exaggerate the standard errors of the coefficients, reducing the accuracy of the coefficients and therefore their reliability. Lastly, multicollinearity in the inputs can cause the coefficients to be more susceptible to disproportionately large changes when small changes in the data occur. Again, this reduces the reliability of any inferences from the coefficients.   
+
+If the relationship between the independent inputs and the *log odds* of the output is linear, than the coefficients will reflect how much the log odds of the output change when the input changes by one unit, while keeping all other variables unchanged, and also assumes the influence of each input is additive, i.e., the total effect of all the inputs on the output is the sum of all the individual effects of each input. This makes it easier to understand the influence and contribution of each input has on the output. However, biased and inaccurate coefficients may occur if the relationship is assumed linear but is actually non-linear.
+
+Outliers could exaggerate the influence of an input by distorting the coefficient estimates and standard errors. This can lead to misinterpretation of the influence of an input has and widen increase the uncertainty of the estimates. Additionally, outliers can worsen the predictive performances of the model when encountering new data. 
+
+A small sample size could cause inaccurate coefficient estimates and wide confidence intervals, reducing the reliability of the influence of each input. A non-binary output cause confounding effects and over fitting of the model. This would cause doubt in the true effect the inputs have when interpreting the coefficients. 
+
+The output is dichotomous (to ensure this, TRUE and FALSE results of the voteBrexit variable are changed into 1 and 0 respectively). The sample size is considerably large, with 344 electoral wards. The datatet has also been normalised; any outliers should not have major effect on the models and coefficients. Therefore, these factors will have no considerable affect on the interpretability of the coefficients. 
+
+&nbsp;
+
+```{r, echo=FALSE, results='hide'}
+brexit$voteBrexit <- as.numeric(brexit$voteBrexit)
+
+```
+To check for multicollinarity, methods like the variance inflation factor (VIF) and correlation matrices can be used.
+
+```{r, echo=FALSE, warning=FALSE, results='hide'}
+#install.packages("car")
+library(car)
+```
+
+```{r, echo=FALSE}
+model <- glm(voteBrexit ~ abc1 + notBornUK + medianIncome + medianAge + 
+               withHigherEd , data = brexit, family = "binomial")
+
+vif_values <- car::vif(model)
+
+print(vif_values)
+
+```
+**Table 1: VIF Values**
+The Table is showing the VIF value of each input.
+VIF <5 is considered low multicollinearity and are considered independent whereas VIF >5 is considered moderate/high multicollinearity and so the inputs could be  correlated.
+"abc1" and "withHigherEd" appear to have high VIF suggesting multicollinearity, whereas the other 3 inputs are considered moderately independent.
+
+&nbsp; 
+
+```{r, echo=FALSE}
+correlation_matrix <- cor(brexit_inputs)
+
+corrplot::corrplot(correlation_matrix, method = "circle")
+
+# Check for high correlations (close to 1 or -1) between predictor variables
+
+```
+**Figure 10: Correlation Plot**
+A correlation matrix is computed. pairs of inputs that show values close to 1 or -1 (or those with large, very dark blue or red circles) are highly correlated with each other.
+All the inputs show some degree of correlation with at least one other input.
+The most notable correlated inputs are "abc1" and "withHigherEd", "medianIncome" and "withHigherEd","medianAge" and "notBornUK", and "medianIncome" and "abc1". 
+Inferring from these, there are some multicollinearity across the inputs and so when inferring the coefficients, it should be considered that these inputs (like "abc1" and "withHigherEd" which had the highest magnitude) may not be accurately representing their independent effect on the outcome.
+
+&nbsp;
+
+To assess for non-linear relationships correlation plots of the inputs and the log odds or the *logit* and lowess smoothing plots are used. 
+
+&nbsp;
+
+```{r, echo=FALSE}
+
+model_abc1 <- glm(voteBrexit ~ abc1, data = brexit, family = "binomial")
+
+predicted_probs_abc1 <- predict(model_abc1, type = "response")
+#
+model_medianIncome <- glm(voteBrexit ~ medianIncome, data = brexit, 
+                          family = "binomial")
+
+predicted_probs_medianIncome <- predict(model_medianIncome, type = "response")
+#
+model_medianAge <- glm(voteBrexit ~ medianAge, data = brexit, 
+                       family = "binomial")
+
+predicted_probs_medianAge <- predict(model_medianAge, type = "response")
+#
+model_withHigherEd <- glm(voteBrexit ~ withHigherEd, data = brexit, 
+                          family = "binomial")
+
+predicted_probs_withHigherEd <- predict(model_withHigherEd, type = "response")
+#
+model_notBornUK <- glm(voteBrexit ~ notBornUK, data = brexit, 
+                       family = "binomial")
+
+predicted_probs_notBornUK <- predict(model_notBornUK, type = "response")
+#
+
+par(mfrow = c(2,3))
+
+plot(brexit$abc1, predicted_probs_abc1, xlab = "abc1", 
+     ylab = "Predicted Probabilities")
+
+plot(brexit$medianIncome, predicted_probs_medianIncome, xlab = "medianIncome", 
+     ylab = "Predicted Probabilities")
+
+plot(brexit$medianAge, predicted_probs_medianAge, xlab = "medianAge", 
+     ylab = "Predicted Probabilities")
+
+plot(brexit$withHigherEd, predicted_probs_withHigherEd, 
+     xlab = "withHigherEd", ylab = "Predicted Probabilities")
+
+plot(brexit$notBornUK, predicted_probs_notBornUK, xlab = "notBornUK", 
+     ylab = "Predicted Probabilities")
+
+```
+**Figure 11: Predicted vs Actual of the Inputs**
+Plots of the predicted probabilities of each input against their actual values from the dataset. 
+
+**It is interesting to observe that the graphs do not reflect the directionality of the coefficient estimates for the "abc1" and "notBornUK" inputs. This could be the reason as to why the Guardian plots did not reflect the logistic regression coefficients. A reason for this could be that there are non-linear relationships present in the data that is not accounted for in the the logistic regression model, so the coefficients are not accurately capturing the true relationship between the inputs and output.**
+
+&nbsp;
+
+```{r, warning=FALSE, results='hide', echo=FALSE}
+
+par(mfrow = c(2,3))
+
+plot(logit(brexit$voteBrexit) ~ brexit$abc1, data = brexit,
+     xlab = "abc1",
+     ylab = "Brexit Vote")
+lines(lowess(brexit$abc1, logit(brexit$voteBrexit)), col = "firebrick3")
+
+plot(logit(brexit$voteBrexit) ~ brexit$medianIncome, data = brexit,
+      xlab = "medianIncome",
+     ylab = "Brexit Vote")
+lines(lowess(brexit$medianIncome, logit(brexit$voteBrexit)), col = "firebrick3")
+
+plot(logit(brexit$voteBrexit) ~ brexit$medianAge, data = brexit,
+      xlab = "medianAge",
+     ylab = "Brexit Vote")
+lines(lowess(brexit$medianAge, logit(brexit$voteBrexit)), col = "firebrick3")
+
+plot(logit(brexit$voteBrexit) ~ brexit$withHigherEd, data = brexit,
+      xlab = "withHigherEd",
+     ylab = "Brexit Vote")
+lines(lowess(brexit$withHigherEd, logit(brexit$voteBrexit)), col = "firebrick3")
+
+plot(logit(brexit$voteBrexit) ~ brexit$notBornUK, data = brexit,
+      xlab = "notBornUK",
+     ylab = "Brexit Vote")
+lines(lowess(brexit$notBornUK, logit(brexit$voteBrexit)), col = "firebrick3")
+
+
+```
+**Figure 12:Lowess Smoothing Plots**
+Scatter plots of each input against the "voteBrexit", as the output is binary, -3 is Remain and +3 is Leave. 
+The lowess smoothing plots measures linearity between the inputs and the logit of the output. "abc1" and "medianAge" show generally straight diagonal red lines, suggesting these inputs can be assumed as linear, whereas "withHigherEd", "medianIncome" and "notBornUK" have a bend, indicating possible non-linearity. 
+
+From these visual representations, all but "medianAge" can be assumed non-linearity with the odd logs of the output, meaning their coefficient estimates most likely do not reflect their affect on the output. There would be the most difficulty in interpreting the estimates of "withHigherEd", "medianIncome" and possibly "notBornUK" as these show the most severe indications of non-linearity. 
+
+&nbsp;
+
+To summarise:
+
+- With Higher Education appears to show multicollinearity and non-linearity.
+
+- ABC1 appears to appears to show multicollinearity and non-linearity.
+
+- Median Income appears to show multicollinearity and non-linearity.
+
+- Median Age appears to be independent from the other inputs and linear with logit of the output.
+
+- not Born in the UK appears to show multicollinearity and non-linearity.
+
+&nbsp;
+
+From these diagnostic tests, the inputs should not be ordered solely on the magnitude of the coefficients from the logistic regression model. The size of the coefficients do not appear to be completely reliable in representing the influence the input may have on the output. 
+
+The order of the input is reordered based on their relevance to the output, the relevance is based on the magnitude of the coefficients and significance (generated through the logistic regression model), and the degree of multicollinearity and linearity with logit of the output.
+
+The re-evaluated order of inputs in decreasing effects are:
+
+- With Higher Education 
+
+- ABC1
+
+- Median Age 
+
+- Median Income
+
+- not Born in the UK 
+
+&nbsp;
+
+"withHigherEd" and "abc1" exhibited the highest levels of multicollinearity and non-linearity, leading to uncertainty regarding the accuracy of their coefficients in representing their influence on the output variable. However, despite this uncertainty, their relevance to the output remains significant, as evidenced by their coefficients and notably high p-values compared to other inputs.
+
+Interestingly, "medianAge" emerges as more relevant to the output compared to "medianIncome," despite having a lower Variance Inflation Factor (VIF). This is further supported by "medianAge" possessing a smaller p-value than "medianIncome." Moreover, "medianIncome" demonstrates a greater degree of multicollinearity and non-linearity overall.
+
+&nbsp;
+
+```{r, echo=FALSE, warning=FALSE}
+set.seed(847)
+
+myModel <- glm(voteBrexit ~ abc1 + notBornUK + medianIncome + medianAge + 
+               withHigherEd , data = brexit, family = "binomial")
+
+myCoef <-signif(coef(myModel),4)
+
+prediction <- predict(myModel, newdata = brexit, type = "response")
+
+testLL <- logLik(myModel)
+
+```
+
+**Coefficient estimates generated from bagging and bootstrapping.**
+```{r, warning=FALSE, echo=FALSE}
+
+test_idx <- sample(dim(brexit)[1], 100)
+test_data <- brexit[test_idx, ]
+train_data <- brexit[-test_idx, ]
+```
+
+```{r, warning=FALSE}
+bsPrediction <- rep(0, dim(test_data)[1])
+
+coeff_model <- coef(myModel)
+
+coefficient_bs <- matrix(NA, nrow = 1000, ncol = length(coeff_model))
+
+for (i in 1:1000){
+  bs_idx = sample(dim(train_data)[1], 100, replace=TRUE)
+  bs_data = train_data[bs_idx,]
+  bsModel = glm(voteBrexit ~ abc1 + notBornUK + medianIncome + 
+                  medianAge + withHigherEd, data=bs_data, family=binomial)
+  bsPrediction = bsPrediction + predict(bsModel, newdata=test_data, 
+                                        type="response")/1000
+  coefficient_bs[i,] = coef(bsModel)
+
+}
+
+bstestLL <- sum(log(bsPrediction[which(test_data$voteBrexit==1)])) +
+sum(log(1-bsPrediction[which(test_data$voteBrexit==0)]))
+```
+Bootstrapping samples data with replacement from the Brexit dataset to create multiple bootstrap samples. This method assesses the stability and variability of coefficient estimates, especially when dealing with multicollinearity. 
+
+Multicollinearity can make coefficient estimates less reliable by inflating their standard errors. Bootstrapping tackles this by creating multiple samples that mirror the original data's variability. By analysing how coefficient estimates vary across these samples, bootstrapping reveals the model's stability. Wide variations suggest the model is sensitive to data changes, while consistent estimates indicate more dependable performance. Overall, bootstrapping is a strong tool for assessing coefficient estimates, especially when multicollinearity is an issue.
+
+Bagging, also known as Bootstrap Aggregating, uses bootstrapping to create many subsets of data from the original dataset. Each subset is formed by randomly selecting data points with replacement, resulting in variations among subsets. Logistic regression models are trained on these subsets. By combining predictions from these models, bagging smooths out prediction variations, reducing noise and bias in coefficient estimates. This approach improves the model's stability and reliability. Additionally, bagging addresses multicollinearity by ensuring a broad set of input subsets for each model, reducing the reliance on any single set of input variables. This variability in input subsets helps control multicollinearity by representing the non-linearity between the inputs and output. 
+
+&nbsp;
+
+```{r, echo=FALSE}
+
+print(paste0("The likelihood of the original model is ", signif(testLL, 4)))
+
+print(paste0("The predictive likelihood of the bagged model is ", signif(bstestLL,4)))
+```
+The predictive likelihood of the bagged model is higher than the original model, indicating the bagged model is performing better than the original model.
+
+&nbsp;
+
+```{r, echo=FALSE}
+summary_myModel <- summary(myModel)
+
+estimates_summary_myModel <- summary_myModel$coefficients[,1]
+
+se_summary_myModel <- summary_myModel$coefficients[,2]
+
+n <- length(brexit)
+
+sd_myModel <- se_summary_myModel * sqrt(n)
+
+confidence_level <- 0.95
+
+margin_of_error_myModel <-qnorm((1 - confidence_level) / 2) * se_summary_myModel
+
+lower_bound_myModel <- signif(estimates_summary_myModel + margin_of_error_myModel, 
+                              digits = 3)
+upper_bound_myModel <- signif(estimates_summary_myModel - margin_of_error_myModel,
+                              digits = 3)
+
+confidence_intervals_myModel <- data.frame(lower = lower_bound_myModel, 
+                                           upper = upper_bound_myModel)
+
+range_CI_myModel <- data.frame(confidence_intervals_myModel$upper - 
+                                 confidence_intervals_myModel$lower)
+
+coefficient_together_myModel <- data.frame(estimates_summary_myModel, 
+                                           sd_myModel,confidence_intervals_myModel,
+                                           range_CI_myModel)
+
+colnames(coefficient_together_myModel) <- c("Coeffcient", "sd", 
+                                            "Lower CI", "Upper CI", "CI range")
+
+rownames(coefficient_together_myModel) <- c("Intercept", "abc1","notBornUK",
+                                            "medianIncome", "medianAge",
+                                            "withHigherEd")
+
+print(coefficient_together_myModel)
+```
+**Table 2: Measurements of Variability from the Original Logistic Model**
+The table shows the coefficient estimates, the standard divaiation (sd), the upper and lower confidence intervals (CI) and the range of these CIs, for each input and the intercept.
+The sd and CI range of the the inputs, in particularly "abc1" and "withHihgherEd", are considered large. This indicates variation in the estimates, and uncertainty in estimates. 
+
+&nbsp;
+
+```{r, echo=FALSE}
+coef_mean <- colMeans(coefficient_bs)
+
+coef_sd <- apply(coefficient_bs, 2, function(x) sd(x, na.rm = TRUE))
+
+confidence_level <- 0.95
+
+coefficients_se <- apply(coefficient_bs, 2, function(x) sd(x, na.rm = TRUE) / sqrt(length(x)))
+
+margin_of_error <- qnorm((1 - confidence_level) / 2) * coefficients_se
+
+lower_bound <- signif((colMeans(coefficient_bs, na.rm = TRUE) + margin_of_error),
+                      digits = 3)
+upper_bound <- signif((colMeans(coefficient_bs, na.rm = TRUE) - margin_of_error),
+                      digits = 3)
+
+confidence_intervals <- data.frame(lower = lower_bound, upper = upper_bound)
+
+range_CI <- data.frame(confidence_intervals$upper - confidence_intervals$lower)
+
+coefficient_together <- data.frame(coef_mean, coef_sd,confidence_intervals,
+                                   range_CI)
+
+colnames(coefficient_together) <- c("Mean Estimate", "sd", "Lower CI", 
+                                    "Upper CI","CI range")
+
+rownames(coefficient_together) <- c("Intercept", "abc1","notBornUK",
+                                    "medianIncome", "medianAge","withHigherEd")
+
+print(coefficient_together)
+
+```
+**Table 3: Measurements of Variability from the Bagging Logistic Model**
+After bagging, the mean coefficient estimates continue to be similar to the original logistic modelling of the dataset. The sd is generally higher which suggests bagging had not reduced the variability of the inputs.
+
+&nbsp;
+
+Following bootstrapping and bagging of the dataset, the direction of each input remained consistent with the original logistic modeling (refer to Table 2 and 3). Additionally, the overall proportion of magnitude across the inputs remained stable, with "abc1" and "withHigherEd" continuing to exhibit the highest magnitudes. This consistency in both direction and magnitude of inputs, even after bagging, suggests that the modelling process is stable and reliable. It indicates that the relationship between the input and output variables remained unchanged throughout the bootstrapping and bagging process.
+
+&nbsp;
+
+In general, the average coefficient estimates derived from bootstrapping and bagging stayed consistent with those obtained from logistic modelling in terms of both directionality and magnitude. The larger standard deviation (sd) values and wider ranges of the confidence intervals (CIs) indicate an increase in variation in regression coefficients overall. This could be as a result of the bagging method exaggerating the influence of highly correlated inputs. Closer inspection reveals that "abc1" and "withHigherEd" exhibit the highest sd values, implying greater variability within these inputs compared to others. This is supported by their  wider CI ranges, suggesting a broader range of coefficient variation. Despite this, the sd values and CIs of "abc1" and "withHigherEd" are still similar to the other inputs, and the magnitude of their coefficient estimates outweighs any potential decrease in relevance for modeling the output. Conversely, "medianIncome" demonstrates the next highest sd value and CI range, further supporting its diminished relevance compared to "medianAge."
+
+On the other hand, "medianAge" consistently shows no evidence of multicollinearity or non-linearity, along with the smallest sd and CI range. This suggests that its coefficient estimates accurately reflect its influence on the output variable, indicating its greater relevance for modeling.
+
+Overall, bagging supports the reordering of inputs based on their effect and relevance with the output. When refining a logistic regression model, various approaches, such as removing inputs, can be employed to evaluate the impact of each input on the outcome. While incorporating bagging into the model development process may help mitigate variance and uncertainty associated with coefficient estimates, it's essential to explore alternative logistic models that address residual multicollinearity and non-linearity among the inputs. This could involve manipulating or eliminating inputs that exhibit strong correlations with others or display non-linear relationships. However, it's worth noting that excluding inputs that significantly influence the outcome may lead to a model that inadequately captures the relationship between inputs and the outcome variable.
+
+
+&nbsp;
+
+
+# Task 4
+
+A logistic model with certain inputs excluded is performed to assess their impact on the coefficient estimates and to evaluate the overall importance of the inputs and their influence on the output. All subsequent modelling will be conducted using bagging to primarily evaluate the potential confounding effects of the inputs. 
+
+&nbsp;
+```{r,echo=FALSE, warning=FALSE}
+myModel_1 <- glm(voteBrexit ~ abc1 + medianIncome + 
+                  medianAge + withHigherEd , data = brexit, family = "binomial")
+
+myModel_2 <- glm(voteBrexit ~ abc1 + notBornUK + medianIncome +
+                  medianAge , data = brexit, family = "binomial")
+
+myModel_3 <- glm(voteBrexit ~ notBornUK + notBornUK + medianIncome +
+                  medianAge , data = brexit, family = "binomial")
+
+myModel_4 <- glm(voteBrexit ~ abc1 + notBornUK  +
+                  medianAge, withHigherEd , data = brexit, family = "binomial")
+
+myModel_5 <- glm(voteBrexit ~ abc1 + notBornUK + medianIncome +
+                  withHigherEd , data = brexit, family = "binomial")
+
+```
+
+**Model 1 with bagging: Logistic regression model with inputs abc1, medianAge, medianIncome and withHigherEd only.**
+```{r, warning=FALSE}
+bsPrediction_1 <- rep(0, dim(test_data)[1])
+
+coeff_model_1 <- coef(myModel_1)
+
+coefficient_bs_1 <- matrix(NA, nrow = 1000, ncol = length(coeff_model_1))
+
+for (i in 1:1000){
+  bs_idx_1 = sample(dim(train_data)[1], 100, replace=TRUE)
+  bs_data_1 = train_data[bs_idx_1,]
+  bsModel_1 = glm(voteBrexit ~ abc1 + medianIncome + 
+                  medianAge + withHigherEd, data=bs_data_1, family=binomial)
+  bsPrediction_1 = bsPrediction_1 + predict(bsModel_1, newdata=test_data, 
+                                        type="response")/1000
+  coefficient_bs_1[i,] = coef(bsModel_1)[]
+
+}
+
+bstestLL_1 <- sum(log(bsPrediction_1[which(test_data$voteBrexit==1)])) +
+sum(log(1-bsPrediction_1[which(test_data$voteBrexit==0)]))
+```
+
+&nbsp;
+
+**Model 2 with bagging: Logistic regression model with inputs abc1, medianIncome, medianAge and notBornUK only.**
+```{r, warning=FALSE}
+bsPrediction_2 <- rep(0, dim(test_data)[1])
+
+coeff_model_2 <- coef(myModel_2)
+
+coefficient_bs_2 <- matrix(NA, nrow = 1000, ncol = length(coeff_model_2))
+
+significance_bs_2 <- matrix(NA, nrow = 1000, ncol = length(coeff_model_2))
+
+for (i in 1:1000){
+  bs_idx_2 = sample(dim(train_data)[1], 100, replace=TRUE)
+  bs_data_2 = train_data[bs_idx_2,]
+  bsModel_2 = glm(voteBrexit ~ abc1 + notBornUK + medianIncome +
+                  medianAge, data=bs_data_2, family=binomial)
+  bsPrediction_2 = bsPrediction_2 + predict(bsModel_2, newdata=test_data, 
+                                        type="response")/1000
+  coefficient_bs_2[i,] = coef(bsModel_2)[]
+}
+
+bstestLL_2 <- sum(log(bsPrediction_2[which(test_data$voteBrexit==1)])) +
+sum(log(1-bsPrediction_2[which(test_data$voteBrexit==0)]))
+```
+
+&nbsp;
+
+```{r,echo=FALSE}
+
+coef_mean_1 <- colMeans(coefficient_bs_1)
+
+coef_sd_1 <- apply(coefficient_bs_1, 2, function(x) sd(x, na.rm = TRUE))
+
+confidence_level <- 0.95
+
+coefficients_se_1 <- apply(coefficient_bs_1, 2, function(x) sd(x, na.rm = TRUE) / sqrt(length(x)))
+
+margin_of_error_1 <- qnorm((1 - confidence_level) / 2) * coefficients_se_1
+
+lower_bound_1 <- signif((colMeans(coefficient_bs_1, na.rm = TRUE) + margin_of_error_1),
+                      digits = 3)
+upper_bound_1 <- signif((colMeans(coefficient_bs_1, na.rm = TRUE) - margin_of_error_1),
+                      digits = 3)
+
+confidence_intervals_1 <- data.frame(lower = lower_bound_1, upper = upper_bound_1)
+
+range_CI_1 <- data.frame(confidence_intervals_1$upper - confidence_intervals_1$lower)
+
+coefficient_together_1 <- data.frame(coef_mean_1, coef_sd_1,confidence_intervals_1,
+                                   range_CI_1)
+
+colnames(coefficient_together_1) <- c("Mean Estimate", "sd", "Lower CI", 
+                                    "Upper CI","CI range")
+
+rownames(coefficient_together_1) <- c("Intercept", "abc1",
+                                    "medianIncome", "medianAge","withHigherEd")
+
+print(coefficient_together_1)
+```
+**Table 4: Measurements of Variability from the Model 1 with Bagging Logistic Model**
+Model 1 looks at inputs abc1, medianAge, medianIncome and withHigherEd only.
+The magnitude and direction of all the remaining inputs appears consistent with the original and bagged models. The sd and CI appear marginally smaller than the bagging model (Table 3). A change in the coefficients' direction demonstrate how much of an effect "withHigherEd" has on the outcome. 
+
+
+&nbsp;
+
+```{r,echo=FALSE}
+
+coef_mean_2 <- colMeans(coefficient_bs_2)
+
+coef_sd_2 <- apply(coefficient_bs_2, 2, function(x) sd(x, na.rm = TRUE))
+
+confidence_level <- 0.95
+
+coefficients_se_2 <- apply(coefficient_bs_2, 2, function(x) sd(x, na.rm = TRUE) / sqrt(length(x)))
+
+margin_of_error_2 <- qnorm((1 - confidence_level) / 2) * coefficients_se_2
+
+lower_bound_2 <- signif((colMeans(coefficient_bs_2, na.rm = TRUE) + margin_of_error_2),
+                      digits = 3)
+upper_bound_2 <- signif((colMeans(coefficient_bs_2, na.rm = TRUE) - margin_of_error_2),
+                      digits = 3)
+
+confidence_intervals_2 <- data.frame(lower = lower_bound_2, upper = upper_bound_2)
+
+range_CI_2 <- data.frame(confidence_intervals_2$upper - confidence_intervals_2$lower)
+
+coefficient_together_2 <- data.frame(coef_mean_2, coef_sd_2,confidence_intervals_2,
+                                   range_CI_2)
+
+colnames(coefficient_together_2) <- c("Mean Estimate", "sd", "Lower CI", 
+                                    "Upper CI","CI range")
+
+rownames(coefficient_together_2) <- c("Intercept", "abc1",
+                                    "notBornUK", "medianIncome","MedianAge")
+
+print(coefficient_together_2)
+```
+**Table 5: Measurements of Variability from the Model 2 with Bagging Logistic Model**
+Model 2 looks at inputs abc1, medianAge, medianIncome and notBornUK only.
+The magnitude and direction of the coeffcicents had severely declined and changed direction as compared with the original and bagged models. The sd and CI appear smaller than the bagging model (Table 3). The magnitude and statistics of all the remaining inputs appears reduced as compared to the other models. A change in the coefficients' direction demonstrate how much of an effect "withHigherEd" has on the outcome. 
+
+&nbsp;
+
+```{r,echo=FALSE}
+
+AIC_myModel <- AIC(myModel)
+AIC_bsModel <- AIC(bsModel)
+AIC_bsModel_1 <- AIC(bsModel_1)
+AIC_bsModel_2 <- AIC(bsModel_2)
+
+all_AIC <- c(AIC_myModel, AIC_bsModel, AIC_bsModel_1, AIC_bsModel_2)
+
+all_AIC <- as.data.frame(all_AIC)
+
+colnames(all_AIC) <- "AIC value"
+
+rownames(all_AIC) <- c("Original", "Bagged","Model 1 w/ bagged", "Model 2 w/ bagged")
+
+all_LL <- c(testLL,bstestLL,bstestLL_1,bstestLL_2)
+
+all_LL <- as.data.frame(all_LL)
+
+rownames(all_LL) <- c("Original", "Bagged", "Model 1 w/ bagged", "Model 2 w/ bagged")
+
+colnames(all_LL) <- "Predictive LL"
+
+all_stats <- as.data.frame(c(all_AIC,all_LL))
+
+rownames(all_stats) <- c("Original", "Bagged","Model 1 w/ bagged", "Model 2 w/ bagged")
+
+colnames(all_stats) <- c("AIC value","Predictive LL")
+
+all_stats
+
+```
+**Table 6: Summary of the Performance of Each Model**
+The shows the Akaike Information Criterion (AIC) values and the predictive log likelihood (LL) of all the evaluated models. A sign of a better fitting/ performing model is a lower AIC value and and a less negative predicitive LL value. 
+Model 1: "abc1", "medianAge", "medianIncome" and "withHigherEd" only, Model 2: Model 2 looks at inputs "abc1", "medianAge", "medianIncome" and "notBornUK" only.
+
+&nbsp;
+
+To illustrate the impact of multicollinearity and non-linearity among certain inputs, logistic regression models were conducted with specific inputs excluded, allowing for a comparison of coefficient changes.
+
+From the Table 8, it appears that the best-performing model is the bagging model with all the inputs included. The bagged model have the lowest AIC value or the highest predictive LL, it demonstrates the best overall performance across both metrics compared to the other models. This finding supports the notion that multicollinearity, although present in the dataset, does not significantly hinder the performance of the model when utilising bagging methods Additionally, the inclusion of all inputs in the bagging model ensures a comprehensive assessment of their combined influence on the output variable.
+
+In Model 1, the input "notBornUK" was omitted. It exhibiting the lowest coefficient and significance, and inconsistent signs of multicollinearity. However, the magnitude of the remaining coefficients in this model remained consistent with those in models containing all inputs (the original model and bagged model). Additionally, the conflicting directionality of "abc1" persisted, not aligning with the Guardian plots. The modeling results confirmed that "notBornUK" does not exert a significant influence on the outcome. 
+
+On the contrary, Model 2 takes a different approach by excluding the input "withHigherEd". This input exhibits the highest coefficient estimate and significance, while also displaying strong correlation with other inputs like "abc1", suggesting a substantial impact on the outcome variable. Model 2 validates this, as the coefficients of other inputs drastically decrease, particularly "abc1". Although "abc1" has the next highest magnitude after "withHigherEd", Model 2 confirms its high correlation and influence by "withHigherEd". It seems that a significant portion of the influence "abc1" exerts on the output is driven by the "withHigherEd" input.
+
+Furthermore, the magnitude of the effect of "withHigherEd" is evident in the change of direction of the "abc1", "notBornUK", and "medianIncome" variables, which deviate from the directionality observed in the Guardian plots. This confirms that the incorrect direction of the coefficients was attributable to the effect of the "withHigherEd" input. 
+
+By repeating this process individually with each of the other inputs, the effects of each variable can be more clearly observed compared to using bagging alone. While bagging addresses the uncertainty of estimates, it can be challenging to interpret the contribution of each input individually. These alternative logistic regression models, which exclude highly correlated or non-linear inputs, simplify the model, making it easier to interpret the relationship between inputs and the output. Furthermore, removing multicollinear inputs improves model performance by reducing noise and variability, thereby enhancing the accuracy and representativeness of inputs' effects on the output.
+
+However, a drawback of this alternative approach is the loss of information. If a highly correlated input contains unique information about the output not captured by the remaining inputs, its exclusion could lead to biased estimates. Additionally, incorrectly attributing the effects of the correlated input to the remaining inputs may introduce bias and result in erroneous inferences between the remaining inputs and the output variable. Essentially, removing inputs may limit the model's ability to accurately represent the interactions between inputs and the output. 
+
+A practical disadvantage to this model is the tedious task of evaluating every combination of inputs and compare their affect on the output. For this dataset there are 31 input combinations that could be considered. As the AIC values and predictive LLs have shown (Table 6), removing a highly correlated input may not always improve the performance of the model, and it is difficult to fully uncover how each input influences the output and each other without thoroughly considering all the possible combinations. Despite this, modelling the inputs in this way is still informative in how each input impacts the output.
+
+&nbsp;
+
+```{r, warning=FALSE, echo=FALSE}
+
+myModel_1 <- glm(voteBrexit ~ abc1 + medianIncome + 
+                  medianAge + withHigherEd , data = brexit, family = "binomial")
+
+myModel_2 <- glm(voteBrexit ~ abc1 + notBornUK + medianIncome + medianAge , 
+                 data = brexit, family = "binomial")
+
+myModel_3 <- glm(voteBrexit ~ notBornUK + medianIncome +medianAge + withHigherEd,
+                 data = brexit, family = "binomial")
+
+myModel_4 <- glm(voteBrexit ~ abc1 + notBornUK  +
+                medianAge + withHigherEd , data = brexit, family = "binomial")
+
+myModel_5 <- glm(voteBrexit ~ abc1 + notBornUK + medianIncome + withHigherEd, 
+                 data = brexit, family = "binomial")
+
+##--------------------------------------------------------------------------------
+
+bsPrediction_3 <- rep(0, dim(test_data)[1])
+
+coeff_model_3 <- coef(myModel_3)
+
+coefficient_bs_3 <- matrix(NA, nrow = 1000, ncol = length(coeff_model_3))
+
+for (i in 1:1000){
+  bs_idx_3 = sample(dim(train_data)[1], 100, replace=TRUE)
+  bs_data_3 = train_data[bs_idx_3,]
+  bsModel_3 = glm(voteBrexit ~ notBornUK + medianIncome +medianAge + withHigherEd, 
+                  data=bs_data_3, family=binomial)
+  bsPrediction_3 = bsPrediction_3 + predict(bsModel_3, newdata=test_data, 
+                                        type="response")/1000
+ coefficient_bs_3[i,] = coef(bsModel_3)[]
+
+}
+
+bstestLL_3 <- sum(log(bsPrediction_3[which(test_data$voteBrexit==1)])) +
+sum(log(1-bsPrediction_3[which(test_data$voteBrexit==0)]))
+
+coef_3 <-signif(as.data.frame(colMeans(coefficient_bs_3)),4)
+
+##--------------------------------------------------------------------------------
+
+bsPrediction_4 <- rep(0, dim(test_data)[1])
+
+coeff_model_4 <- coef(myModel_4)
+
+coefficient_bs_4 <- matrix(NA, nrow = 1000, ncol = length(coeff_model_4))
+
+for (i in 1:1000){
+  bs_idx_4 = sample(dim(train_data)[1], 100, replace=TRUE)
+  bs_data_4 = train_data[bs_idx_4,]
+  bsModel_4 = glm(voteBrexit ~ abc1 + notBornUK + medianAge + withHigherEd, 
+                  data=bs_data_4, family=binomial)
+  bsPrediction_4 = bsPrediction_4 + predict(bsModel_4, newdata=test_data, 
+                                        type="response")/1000
+ coefficient_bs_4[i,] = coef(bsModel_4)[]
+
+}
+
+bstestLL_4 <- sum(log(bsPrediction_4[which(test_data$voteBrexit==1)])) +
+sum(log(1-bsPrediction_4[which(test_data$voteBrexit==0)]))
+
+coef_4 <- signif(as.data.frame(colMeans(coefficient_bs_4)),4)
+
+##--------------------------------------------------------------------------------
+
+bsPrediction_5 <- rep(0, dim(test_data)[1])
+
+coeff_model_5 <- coef(myModel_5)
+
+coefficient_bs_5 <- matrix(NA, nrow = 1000, ncol = length(coeff_model_5))
+
+for (i in 1:1000){
+  bs_idx_5 = sample(dim(train_data)[1], 100, replace=TRUE)
+  bs_data_5 = train_data[bs_idx_5,]
+  bsModel_5 = glm(voteBrexit ~ abc1 + notBornUK + medianIncome + withHigherEd, 
+                  data=bs_data_5, family=binomial)
+  bsPrediction_5 = bsPrediction_5 + predict(bsModel_5, newdata=test_data, 
+                                        type="response")/1000
+ coefficient_bs_5[i,] = coef(bsModel_5)[]
+
+}
+
+bstestLL_5 <- sum(log(bsPrediction_5[which(test_data$voteBrexit==1)])) +
+sum(log(1-bsPrediction_5[which(test_data$voteBrexit==0)]))
+
+coef_5 <- signif(as.data.frame(colMeans(coefficient_bs_5)),4)
+
+##-----------------------------------------------------------------------------
+
+coef_1 <- signif(as.data.frame(coef_mean_1),4)
+
+coef_2 <- signif(as.data.frame(coef_mean_2),4)
+
+col_intercept <- as.data.frame(c(myCoef[1], coef_1[1,],coef_2[1,],coef_3[1,],coef_4[1,],coef_5[1,]))
+
+col_abc1 <- as.data.frame(c(myCoef[2],coef_1[2,],coef_2[2,],"NA",coef_4[2,],coef_5[2,]))
+
+col_notBornUK <- as.data.frame(c(myCoef[3],"NA",coef_2[3,],coef_3[2,],coef_4[3,],coef_5[3,]))
+
+col_medianIncome <- as.data.frame(c(myCoef[4],coef_1[3,],coef_2[4,],coef_3[3,],"NA",coef_5[4,]))
+
+col_medianAge <- as.data.frame(c(myCoef[5],coef_1[4,],coef_2[4,],coef_3[4,],coef_4[4,],"NA"))
+
+col_withHigherEd <- as.data.frame(c(myCoef[6],coef_1[5,],"NA",coef_3[5,],coef_4[5,],coef_5[5,]))
+
+all_models <- c(col_intercept,col_abc1,col_notBornUK, col_medianIncome,col_medianAge, col_withHigherEd)
+
+all_models <- as.data.frame(all_models)
+
+rownames(all_models) <- c("Original","Model 1", "Model 2","Model 3", "Model 4", "Model 5")
+
+colnames(all_models) <- c("Intercept","abc1", "notBornUK","medianIncome","medianAge","withHigherEd")
+
+all_models
+```
+**Table 7: Coefficients of Inputs from Each Model**
+Table shows the coefficients when each input is sequentially omitted from the model. "NA" symbolises the omitted input in that model. The original model, where all the inputs are factored in, is included for comparison. 
+
+When evaluating models where only one input is removed, inputs with the highest magnitude in the original model resulted in the most significant alterations in coefficients of other inputs, while those with the lowest magnitude exhibited the opposite effect. This observation reinforces the understanding that inputs with higher magnitudes exert a greater influence on the output, whereas removing inputs with lower magnitude has minimal impact on the coefficients of other variables. Specifically, When "medianAge" is removed, the magnitudes of the remaining inputs had a greater degree of change than when "medianIncome" was omitted, signifying "medianAge" has a greater influence on the output than "medianIncome". 
+
+In summary, the alternative logistic regression models (Figure 7) supports this order of inputs in terms of their effects on the output (in decreasing order):
+
+- With Higher Education 
+
+- ABC1
+
+- Median Age 
+
+- Median Income
+
+- not Born in the UK 
+
+
+&nbsp;
+
+
+An alternative approach to logistic regression is the use of regularisation methods, which aim to prevent overfitting and improve the model's generalisation performance. These methods involve adding penalty terms to the likelihood function, which discourages the model from learning overly complex patterns that may not generalize well to unseen data. Common regulariaation methods, such as Lasso and Ridge, are utilised to control the magnitude of the coefficients in the model, effectively reducing the model's complexity and sensitivity to noise in the data.
+
+&nbsp;
+
+**Lasso/Ridge regression and bagging model.**
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+
+#WORKING SCRIPT THANK THE HEAVENS
+
+library(glmnet)
+
+test_idx <- sample(dim(brexit)[1], 100)
+test_data <- brexit[test_idx, ]
+train_data <- brexit[-test_idx, ]
+```
+
+```{r, warning=FALSE}
+
+bootstrap_func <- function(data) {
+  bs_idx_gam <- sample(nrow(data), 100, replace = TRUE)
+  bs_data_gam <- data[bs_idx_gam, ]
+  x_gam <- model.matrix(voteBrexit ~ abc1 + notBornUK + medianIncome + 
+                          medianAge + withHigherEd, data = bs_data_gam)[,-1]
+  y_gam <- as.numeric(bs_data_gam$voteBrexit)   
+  fit <- glmnet(x_gam, y_gam, family = "binomial")
+  return(fit)
+}
+
+coefficient_bs_gam <- matrix(NA, nrow = 1000, ncol = 6)
+
+bsPrediction_gam <- rep(0, nrow(test_data))
+
+for (i in 1:1000) {
+  bsModel_gam <- bootstrap_func(train_data)
+  bsPrediction_gam <- bsPrediction_gam + 
+    predict(bsModel_gam, newx = 
+              model.matrix(voteBrexit ~ abc1 + notBornUK + medianIncome + 
+                             medianAge + withHigherEd, data = test_data)[,-1], 
+            type = "response", s = 0.1) / 1000
+  coefficient_bs_gam[i] <- coef(bsModel_gam)[1:6,]
+}
+```
+
+
+&nbsp;
+
+```{r,echo=FALSE}
+
+coefficient_bs_gam <- as.matrix(coef(bsModel_gam))
+
+coefficient_bs_gam <- t(coefficient_bs_gam)
+
+coef_mean_gam <- colMeans(coefficient_bs_gam)
+
+coef_mean_gam
+
+```
+**Table 8: Averaged Coefficient Estimates of Each Input from the glmnet/bagged Model.**
+
+&nbsp;
+
+Regularisation helps address bias, reduces coefficient variability, and mitigates issues like non-linearity and multicollinearity inherent in the dataset and inputs. Lasso diminishes multicollinearity by excluding irrelevant predictors, while Ridge stabilises coefficient estimates in the presence of multicollinearity. Both methods control input non-linearity by penalising large coefficients, thereby preventing overfitting caused by overly complex patterns.
+
+The *glmnet* package utilises elastic net, combining the strengths of Lasso and Ridge regression. Although regulariaation methods enhance model performance, they pose limitations in terms of interpretability, sensitivity to correlated inputs, and assumptions of linearity between inputs and outputs.
+
+The combination of Lasso/Ridge regression and bagging logistic regression addresses some issues observed in non-bagged and bagged models, resulting in more accurate and less variable prediction estimates. However, while coefficient magnitudes appear smaller, indicating controlled bias and improved input-output influence representation, the larger sd and CI ranges compared to the bagged-only model suggest limited variability reduction.
+
+Although the glmnet/bagging model partially resolves multicollinearity and non-linearity, inconsistencies between distribution estimates and mean coefficients persist; the glmnet/bagging model couldn't capture the complex input interactions.
+
+In summary, the glmnet/bagged model reduces coefficient variability, improving the precision of coefficient magnitudes. However, inconsistent coefficient directions indicate the incomplete capture of input interactions with each other and the output.
+
+&nbsp;
+
+```{r, echo=FALSE}
+testLL_gam <- sum(log(bsPrediction_gam[which(test_data$voteBrexit==1)])) +
+sum(log(1-bsPrediction_gam[which(test_data$voteBrexit==0)]))
+
+print(paste0("The predictive likelihood of the original model is ", signif(testLL, 4)))
+
+print(paste0("The predictive likelihood of the bagged model is ", signif(bstestLL,4)))
+
+print(paste0("The predictive likelihood of the Model 1 is ", signif(bstestLL_1,4)))
+
+print(paste0("The predictive likelihood of the Model 2 is ", signif(bstestLL_2,4)))
+
+print(paste0("The predictive likelihood of the glmnet/bagged model is ", signif(testLL_gam,4)))
+
+```
+Overall, according to the predictive likelihood, the glmnet/bagged model appears to perform worse than the bagged models but better than the original model. Interestingly, the glmnet/bagged model shows a similar score to model 2 (with "withHigherEd" excluded), implying that the glmnet/bagged model penalises the "withHigherEd" input due to its large coefficient. This observation also suggests that model 2 attempts to address overfitting by excluding inputs that may introduce bias.
+
+
+&nbsp;
+
+
+# Conclusion 
+
+In conclusion, the inputs in this dataset exhibited multicollinearity and non-linearity with the output, posing challenges for logistic regression model fitting. The original model struggled to capture the data's complexity, leading to potentially biased and misdirected coefficient estimates influenced by correlated inputs. Moreover, the coefficients displayed considerable variation, indicating instability and uncertainty in the original logistic model.
+
+Bagging was employed to address these issues, but did not result in improved estimate variability and failed to alleviate bias. This could possibly be due to bagging enhancing the confounding effects of highly correlated inputs. Subsequent modelling, involving the removal of specific inputs, showcased notable improvements and shed light on potential input influence. However, it remained challenging to ascertain whether removing these inputs affected the model's ability to reveal true input-output relationships. Attempts with Lasso/Ridge regressions proved unsuccessful in addressing input interactions, with each subsequent model exhibiting declining predictive likelihood scores, indicative of poor data fit and potential overfitting to the training data.
+
+In summary, altered and bagged logistic regression models appeared to offer the best fit for the dataset, albeit imperfectly due to insufficient flexibility in accommodating interactions between the inputs and output. Despite the lack of absolute interpretability, effects of certain inputs, such as "withHigherEd", "notBornUK" and "medianAge", on the outcome could be inferred as these inputs consistently demonstrated influence, or lack thereof, across models, even after accounting for multicollinearity and non-linearity.

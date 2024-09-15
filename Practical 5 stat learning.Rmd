@@ -1,0 +1,755 @@
+---
+title: 'Assessed Practical III: Can I eat that mushroom?'
+author: "Hazel.A.Fernando - 201202015"
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+##------------------------------------------------------------------------------
+NOTES TO SELF
+Load and Preprocess the Data:
+
+Load the mushrooms.csv data file.
+Inspect the data to understand its structure and the types of categorical variables present.
+Encode the categorical variables as needed for machine learning algorithms.
+Train Decision Trees and Random Forests:
+
+Split the data into training and testing sets.
+Train a Decision Tree classifier and tune its parameters for optimal performance.
+Train a Random Forest classifier and tune its parameters for optimal performance.
+Evaluate the performance of both models based on the number of correctly classified mushrooms.
+Visualize the final fitted Decision Tree model and discuss its interpretability.
+Perform Cross-Validation and Model Selection:
+
+Implement cross-validation for both models to assess their performance.
+Use a statistical test to compare the performance of the models and determine if there is a significant difference between them.
+Present the results convincingly.
+
+##------------------------------------------------------------------------------
+
+Read the data in and see what the data is like.
+```{r}
+
+mushroom <- read.csv("mushrooms.csv", header = TRUE)
+
+head(mushroom$Edible)
+
+```
+All the data points are categorical.
+
+
+Change ouput into factors for later packages to work. 
+```{r}
+mushroom$Edible <- as.factor(mushroom$Edible)
+mushroom$CapShape <- as.factor(mushroom$CapShape)
+mushroom$CapSurface <- as.factor(mushroom$CapSurface)
+mushroom$CapColor <- as.factor(mushroom$CapColor)
+mushroom$Odor <- as.factor(mushroom$Odor)
+mushroom$Height <- as.factor(mushroom$Height)
+```
+
+
+# Task 1
+
+
+```{r}
+library(rpart)
+library(rpart.plot)
+library(caret)
+
+```
+
+Create training and testing datasets.
+```{r}
+
+set.seed(123)
+train_indices <- createDataPartition(mushroom$Edible, p = 0.8, list = FALSE)
+train_data <- mushroom[train_indices, ]
+test_data <- mushroom[-train_indices, ]
+
+```
+
+Check what the accuracy of the dt is like with all inputs included and all model settings to default.
+```{r}
+
+dt_all_cp1 <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                                 method = "class",
+                                 data = train_data)
+
+preds_1 <- predict(dt_all_cp1, 
+                       newdata = test_data, 
+                       type = "class")               
+
+accuracy_1 <- confusionMatrix(factor(preds_1), factor(test_data$Edible))
+
+accuracy_1 <- accuracy_1$overall[1:2]
+
+accuracy_1
+
+```
+Trying different complex parameter values. 
+```{r}
+cp_values <- seq(0, 0.01, by = 0.0001)
+
+accuracies <- numeric(length(cp_values))
+
+for (i in seq_along(cp_values)) {
+  dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    cp = cp_values[i],
+                    method = "class",
+                    data = train_data)
+  
+  preds <- predict(dt_model, newdata = test_data, type = "class")
+  
+  accuracy <- confusionMatrix(factor(preds), factor(test_data$Edible))$overall[1]
+  
+  accuracies[i] <- accuracy
+}
+
+plot(cp_values, accuracies, type = "b", xlab = "CP Values", ylab = "Accuracy", main = "Accuracy vs. CP Values")
+```
+
+```{r}
+
+maxdepth <- seq(1, 10, by = 1)
+
+accuracies <- numeric(length(maxdepth))
+
+for (i in seq_along(maxdepth)) {
+  dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    maxdepth = maxdepth[i],
+                    method = "class",
+                    data = train_data)
+  
+  preds <- predict(dt_model, newdata = test_data, type = "class")
+  
+  accuracy <- confusionMatrix(factor(preds), factor(test_data$Edible))$overall[1]
+  
+  accuracies[i] <- accuracy
+}
+
+plot(maxdepth, accuracies, type = "b", xlab = "Maxdepth Values", ylab = "Accuracy", main = "Accuracy vs. Maxdepth Values")
+```
+
+```{r}
+
+minbucket <- seq(1, 10, by = 1)
+
+accuracies <- numeric(length(minbucket))
+
+for (i in seq_along(minbucket)) {
+  dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    minbucket = minbucket[i],
+                    method = "class",
+                    data = train_data)
+  
+  preds <- predict(dt_model, newdata = test_data, type = "class")
+  
+  accuracy <- confusionMatrix(factor(preds), factor(test_data$Edible))$overall[1]
+  
+  accuracies[i] <- accuracy
+}
+
+plot(minbucket, accuracies, type = "b", xlab = "Minbucket Values", ylab = "Accuracy", main = "Accuracy vs. Minbucket Values")
+```
+
+```{r}
+
+minsplit <- seq(10, 50, by = 5)
+
+accuracies <- numeric(length(minsplit))
+
+for (i in seq_along(minsplit)) {
+  dt_model <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    minsplit = minsplit[i],
+                    method = "class",
+                    data = train_data)
+  
+  preds <- predict(dt_model, newdata = test_data, type = "class")
+  
+  accuracy <- confusionMatrix(factor(preds), factor(test_data$Edible))$overall[1]
+  
+  accuracies[i] <- accuracy
+}
+
+plot(minsplit, accuracies, type = "b", xlab = "Minsplit Values", ylab = "Accuracy", main = "Accuracy vs. Minsplit Values")
+```
+
+
+Changing the maxdepth, minbucket, minsplit does not change the prediction.
+A CP value between 0 and 0.001 appears to be the best.
+
+Changing the combination of inputs
+```{r}
+input_variables_dt <- c("CapSurface", "CapColor", "CapShape", "Odor", "Height")
+
+input_combinations_dt <- lapply(1:length(input_variables_dt), function(n) combn(input_variables_dt, n, simplify = FALSE))
+
+input_combinations_dt <- unlist(input_combinations_dt, recursive = FALSE)
+
+accuracies_dt <- numeric(length(input_combinations_dt))
+
+combination_labels_dt <- character(length(input_combinations_dt))
+
+for (i in seq_along(input_combinations_dt)) {
+  input_combinations_dt_i <- input_combinations_dt[[i]]
+  
+  formula_dt <- as.formula(paste("Edible ~", paste(input_combinations_dt_i, collapse = " + ")))
+  
+  combination_labels_dt[i] <- paste(input_combinations_dt_i, collapse = ", ")
+  
+  dt_model <- rpart(formula_dt,
+                    cp = 0.001,
+                    maxdepth = 5,
+                    minbucket = 5,
+                    minsplit = 10,
+                    method = "class",
+                    data = train_data)
+  
+  preds_dt <- predict(dt_model, newdata = test_data, type = "class")
+  
+  accuracy_dt <- confusionMatrix(factor(preds_dt), factor(test_data$Edible))$overall[1]
+  
+  accuracies_dt[i] <- accuracy_dt
+}
+
+```
+
+```{r}
+combination_labels_dt <- as.character(combination_labels_dt)
+
+dt_list_accuracies <- data.frame(Combinations = combination_labels_dt, Accuracies = accuracies_dt)
+
+sorted_dt_list_accuracies <- dt_list_accuracies[order(-dt_list_accuracies$Accuracies), ]
+
+sorted_dt_list_accuracies
+
+```
+
+```{r}
+
+# Plot the accuracy vs. input variable combinations with labels
+plot(1:length(input_combinations_dt), accuracies_dt, type = "b", xlab = "Input Variable Combinations", ylab = "Accuracy", main = "Accuracy vs. Input Variable Combinations", xaxt = "n")
+axis(1, at = 1:length(input_combinations_dt), labels = combination_labels_dt, las = 2)
+
+```
+
+
+Odor appears to have to most if not the only influence on the outcome. Trying out all the combinations of inputs with Odor just shows the same if not higher predictive value as odor alone.
+```{r}
+best_combination_dt <- as.character(sorted_dt_list_accuracies[1, "Combinations"])
+
+best_inputs_dt <- unlist(strsplit(best_combination_dt, ", "))
+
+model_input_dt <- paste(best_inputs_dt, collapse = " + ")
+
+formula_dt <- as.formula(paste("Edible ~", model_input_dt))
+
+best_dt <- rpart(formula_dt,
+                                 cp = 0.001,
+                                 maxdepth = 5,
+                                 minbucket = 7,
+                                 minsplit = 10,
+                                 method = "class",
+                                 data = train_data)
+
+
+
+preds_2 <- predict(best_dt, 
+                       newdata = test_data, 
+                       type = "class")               
+
+accuracy_2 <- confusionMatrix(factor(preds_2), factor(test_data$Edible))
+
+accuracy_2 <- accuracy_2$overall[1:2]
+
+accuracy_2
+```
+
+```{r}
+options(repr.plot.width = 6, repr.plot.height = 6)
+
+prp(best_dt,
+    space=4,          
+    split.cex = 1.2,
+    nn.border.col=0,
+    extra = 6)
+```
+
+##---------------------------------------------------------------------
+
+NOTE TO SELF 
+
+too many nodes leads to over fitting, if models too large, not good when generalised to other new data
+
+minbucket = if terminal node has less than expressed observations, will terminate 
+
+minsplit = if split has less than the specified observations, it will not split but become a terminal node 
+
+maxdepth = how many levels the tree has 
+##---------------------------------------------------------------------
+
+```{r, warning=FALSE, message=FALSE}
+library(randomForest)
+```
+
+Seeing accuracy of all inputs and default model settings 
+```{r}
+
+rf_model = randomForest(Edible ~ Odor + CapColor + CapShape + CapSurface + Height, 
+                        data=train_data)
+
+preds_rf <- predict(rf_model, newdata=test_data, type="class")
+
+accuracy_rf <- confusionMatrix(preds_rf, test_data$Edible)$overall["Accuracy"]
+
+accuracy_rf
+
+```
+2 mtry appears to be the best, 5 has a high accuracy but could also mean the data is being overfitted. And 2 ensures no single feature dominates the splits, hopefully leading to a more generalised model. 
+```{r}
+mtry <- seq(0, 5, by = 1)
+
+accuracies_rf <- numeric(length(mtry))
+
+for (i in seq_along(mtry)) {
+  rf_model <- randomForest(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    mtry = mtry[i],
+                    data = train_data)
+
+    preds_rf <- predict(rf_model, newdata = test_data, type = "class")
+  
+  accuracy_rf <- confusionMatrix(factor(preds_rf), factor(test_data$Edible))$overall[1]
+  
+  accuracies_rf[i] <- accuracy_rf
+}
+
+plot(mtry, accuracies_rf, type = "b", xlab = "mtry values", ylab = "Accuracy", main = "Accuracy vs. mtry values")
+```
+
+
+changes wildly after each try but 10 remains consistent with high accuracy estimates.
+```{r}
+
+nodesize <- seq(10, 50, by = 10)
+
+accuracies_rf <- numeric(length(nodesize))
+
+for (i in seq_along(nodesize)) {
+  rf_model <- randomForest(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    nodesize = nodesize[i],
+                    data = train_data)
+  
+  preds_rf <- predict(rf_model, newdata = test_data, type = "class")
+  
+  accuracy_rf <- confusionMatrix(factor(preds_rf), factor(test_data$Edible))$overall[1]
+  
+  accuracies_rf[i] <- accuracy_rf
+}
+
+plot(nodesize, accuracies_rf, type = "b", xlab = "Notesize values", ylab = "Accuracy", main = "Accuracy vs. Nodesize values")
+```
+
+
+Changes wildly when ran multiple times, will stick to 1000
+```{r}
+ntree <- seq(500, 1000, by = 100)
+
+accuracies_rf <- numeric(length(ntree))
+
+for (i in seq_along(ntree)) {
+  rf_model <- randomForest(Edible ~ CapSurface + CapColor + CapShape + Odor + Height,
+                    ntree = ntree[i],
+                    data = train_data)
+  
+  preds_rf <- predict(rf_model, newdata = test_data, type = "class")
+  
+  accuracy_rf <- confusionMatrix(factor(preds_rf), factor(test_data$Edible))$overall[1]
+  
+  accuracies_rf[i] <- accuracy_rf
+}
+
+plot(ntree, accuracies_rf, type = "b", xlab = "ntree values", ylab = "Accuracy", main = "Accuracy vs. ntree values")
+```
+
+
+Like the dt, odor appears to have the most influence on the output, accuracies increases slightly when added capshape and capcolor  capsurface and no real changes whether height is included.
+```{r, warning=FALSE}
+input_variables_rf <- c("CapSurface", "CapColor", "CapShape", "Odor", "Height")
+
+input_combinations_rf <- lapply(1:length(input_variables_rf), function(n) combn(input_variables_rf, n, simplify = FALSE))
+
+input_combinations_rf <- unlist(input_combinations_rf, recursive = FALSE)
+
+accuracies_rf <- numeric(length(input_combinations_rf))
+
+combination_labels_rf <- character(length(input_combinations_rf))
+
+for (i in seq_along(input_combinations_rf)) {
+  input_combinations_rf_i <- input_combinations_rf[[i]]
+  
+  formula_rf <- as.formula(paste("Edible ~", paste(input_combinations_rf_i, collapse = " + ")))
+  
+  combination_labels_rf[i] <- paste(input_combinations_rf_i, collapse = ", ")
+  
+  rf_model <- randomForest(formula_rf,
+                           ntree = 1000,
+                           mtry = 2,
+                           nodesize = 10,
+                    method = "class",
+                    data = train_data)
+  
+  preds_rf <- predict(rf_model, newdata = test_data, type = "class")
+  
+  accuracy_rf <- confusionMatrix(factor(preds_rf), factor(test_data$Edible))$overall[1]
+  
+  accuracies_rf[i] <- accuracy_rf
+}
+```
+
+```{r}
+combination_labels_rf <- as.character(combination_labels_rf)
+
+rf_list_accuracies <- data.frame(Combinations = combination_labels_rf, Accuracies = accuracies_rf)
+
+sorted_rf_list_accuracies <- rf_list_accuracies[order(-rf_list_accuracies$Accuracies), ]
+
+sorted_rf_list_accuracies
+
+```
+
+
+```{r}
+plot(1:length(input_combinations_rf), accuracies_rf, type = "b", xlab = "Input Variable Combinations", ylab = "Accuracy", main = "Accuracy vs. Input Variable Combinations", xaxt = "n")
+axis(1, at = 1:length(input_combinations_rf), labels = combination_labels_rf, las = 2)
+
+```
+
+
+odor has the most effect in the accuracy of the predictions, capcolor, capshape and capsurface has somewhat of an influence too. Height has the least if any.
+
+```{r}
+best_combination_rf <- as.character(sorted_rf_list_accuracies[1, "Combinations"])
+
+best_inputs_rf <- unlist(strsplit(best_combination_rf, ", "))
+
+model_input_rf <- paste(best_inputs_rf, collapse = " + ")
+
+formula_rf <- as.formula(paste("Edible ~", model_input_rf))
+
+best_rf <- randomForest(formula_rf,
+                 ntree = 1000,
+                 mtry = 2,
+                 nodesize = 10,
+                                 method = "class",
+                                 data = train_data)
+
+
+
+preds_3 <- predict(best_rf, 
+                       newdata = test_data, 
+                       type = "class")               
+
+accuracy_3 <- confusionMatrix(factor(preds_3), factor(test_data$Edible))
+
+accuracy_3 <- accuracy_3$overall[1:2]
+
+accuracy_3
+
+```
+Gini Impurity
+
+```{r}
+dt_model_gini <- rpart(Edible ~ CapSurface + CapColor + CapShape + Odor + Height, 
+                       data = train_data, 
+                       method = "class",
+                       parms = list(split = "gini"),
+                       cp = 0.001,
+                                 maxdepth = 5,
+                                 minbucket = 7,
+                                 minsplit = 20,)
+
+
+preds_gini <- predict(dt_model_gini, 
+                       newdata = test_data, 
+                       type = "class")               
+
+accuracy_gini <- confusionMatrix(factor(preds_gini), factor(test_data$Edible))
+
+accuracy_gini <- accuracy_gini$overall[1:2]
+
+accuracy_gini
+
+
+```
+Performed the worse.
+
+
+
+
+
+
+
+#Task 2
+
+```{r}
+set.seed(123)
+train_indices <- createDataPartition(mushroom$Edible, p = 0.8, list = FALSE)
+train_data <- mushroom[train_indices, ]
+test_data <- mushroom[-train_indices, ]
+```
+
+Cross val three ways 
+
+#----------------------------------------------------------------------
+NOT SURE IF WORTH KEEPING
+Does work anyway 
+
+Cross validation of top 3 best DT and RF models 
+
+```{r}
+best_dt_models_cv <- as.character(sorted_dt_list_accuracies[1:3,"Combinations"])
+
+best_rf_models_cv <- as.character(sorted_rf_list_accuracies[1:3,"Combinations"])
+
+best_all_models_cv <- c(best_dt_models_cv, best_rf_models_cv)
+
+input_combinations_best <- c(best_all_models_cv[1:3], tail(best_all_models_cv, 3))
+
+input_combinations_best <- strsplit(best_all_models_cv, ", ")
+
+accuracies_best <- numeric(length(input_combinations_best))
+
+combination_labels_best <- character(length(input_combinations_best))
+
+model_types <- character(length(input_combinations_best))
+```
+
+train_control <- trainControl(method = "cv", number = 10)
+
+
+
+
+for (i in seq_along(input_combinations_best)) {
+  input_combinations_best_i <- input_combinations_best[[i]]
+  
+  formula_best <- as.formula(paste("Edible ~", paste(input_combinations_best_i, collapse = " + ")))
+  
+  combination_labels_best[i] <- paste(input_combinations_best_i, collapse = ", ")
+  
+  if (i <= 3) {
+    best_model_cv <- rpart(formula_best,
+                                 cp = 0.001,
+                                 maxdepth = 5,
+                                 minbucket = 7,
+                                 minsplit = 10,
+                                 method = "class",
+                                 data = train_data)
+     model_types[i] <- "Decision Tree"
+     
+  } else {
+    best_model_cv <- train(formula_best, 
+                           data = train_data, 
+                           method = "rf",
+                           trControl = train_control,
+                           tuneGrid = expand.grid(mtry = floor(sqrt(length(input_combinations_best_i)))),
+                           ntree = 1000,
+                           nodesize = 10)
+     model_types[i] <- "Random Forest"
+  }
+  
+  preds_best <- predict(best_model_cv, newdata = test_data, type = "class")  
+  
+  accuracy_best <- confusionMatrix(factor(preds_best), factor(test_data$Edible))$overall['Accuracy']
+  
+  accuracies_best[i] <- accuracy_best
+}
+
+
+
+
+# Create a data frame to store results
+results_best <- data.frame(Combination = combination_labels_best, Accuracy = accuracies_best, ModelType = model_types)
+
+# Sort by accuracy in descending order
+sorted_results_best <- results_best[order(-results_best$Accuracy), ]
+
+print(sorted_results_best)
+
+
+
+
+model_names = combination_labels_best
+
+colours = c("mediumblue", "royalblue3", "indianred1","firebrick")
+
+plot(1:length(combination_labels_best), results_best$Accuracy, col=colours, pch=19,
+     main = "Accuracy of the Predictive Models",
+xlab="Model", ylab="Accuracy",
+xaxt = "n", ylim = range(results_best$Accuracy), yaxt = "n")
+  axis(side = 1, at = c(1,2,3,4,5,6), labels = model_names)
+axis(2, las = 1, cex.axis = 0.7)
+
+
+
+#----------------------------------------------------------------------
+
+Cross validation of only the best DT and RF models 
+```{r}
+
+# DT model
+best_dt_cv <- train(formula_dt, 
+                 data = train_data, 
+                 method = "rpart",
+                 trControl = train_control,
+                 tuneGrid = expand.grid(cp = 0.001),
+                                      control=rpart.control(minbucket= 5, minsplit = 10, maxdepth = 5))
+
+preds_dt_cv <- predict(best_dt_cv, newdata=test_data, type="raw")
+
+accuracy_dt_cv <- confusionMatrix(preds_dt_cv, test_data$Edible)$overall["Accuracy"]
+
+
+# RF model
+best_rf_cv <- train(formula_rf, 
+                 data = train_data, 
+                 method = "rf",
+                 trControl = train_control,
+                 tuneGrid = expand.grid(mtry = floor(sqrt(5))),
+                 ntree = 1000,
+                 nodesize = 10)
+
+preds_rf_cv <- predict(best_rf_cv, newdata=test_data, type="raw")
+
+accuracy_rf_cv <- confusionMatrix(preds_rf_cv, test_data$Edible)$overall["Accuracy"]
+
+
+results <- resamples(list(DecisionTree = best_dt_cv, RandomForest = best_rf_cv))
+
+
+# Compare models
+summary(results)
+bwplot(results)
+```
+
+
+Formulas to do k-fold cross validation 
+```{r}
+cv_decision_tree <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- rpart(formula, data = train_data_cv, method = "class", 
+                   cp = 0.001, maxdepth = 5, minbucket = 5, minsplit = 10)
+    
+    preds <- predict(model, newdata = test_data_cv, type = "class")
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    accuracies[i] <- accuracy
+  }
+  
+  mean(accuracies)
+}  
+
+
+cv_random_forest <- function(data, formula, k = 10) {
+  folds <- createFolds(data$Edible, k = k, list = TRUE, returnTrain = TRUE)
+  accuracies <- numeric(k)
+  
+  for (i in 1:k) {
+    train_indices <- folds[[i]]
+    train_data_cv <- data[train_indices, ]
+    test_data_cv <- data[-train_indices, ]
+    
+    model <- randomForest(formula, data = train_data_cv, ntree = 1000, mtry = floor(sqrt(ncol(train_data_cv)-1)), nodesize = 10)
+    
+    preds <- predict(model, newdata = test_data_cv)
+    accuracy <- sum(preds == test_data_cv$Edible) / nrow(test_data_cv)
+    
+    accuracies[i] <- accuracy
+  }
+  
+  mean(accuracies)
+}
+```
+
+```{r}
+best_dt_models_cv <- as.character(sorted_dt_list_accuracies[1:3,"Combinations"])
+best_rf_models_cv <- as.character(sorted_rf_list_accuracies[1:3,"Combinations"])
+
+best_all_models_cv <- c(best_dt_models_cv, best_rf_models_cv)
+
+input_combinations_best <- c(best_all_models_cv[1:3], tail(best_all_models_cv, 3))
+input_combinations_best <- strsplit(best_all_models_cv, ", ")
+
+accuracies_best <- numeric(length(input_combinations_best))
+combination_labels_best <- character(length(input_combinations_best))
+model_types <- character(length(input_combinations_best))
+```
+
+```{r}
+
+for (i in seq_along(input_combinations_best)) {
+  input_combinations_best_i <- input_combinations_best[[i]]
+  formula_best <- as.formula(paste("Edible ~", paste(input_combinations_best_i, collapse = " + ")))
+  combination_labels_best[i] <- paste(input_combinations_best_i, collapse = ", ")
+  
+  if (i <= 3) {
+    # Decision Tree Cross-Validation
+    accuracies_best[i] <- cv_decision_tree(mushroom, formula_best, k = 10)
+    model_types[i] <- "Decision Tree"
+  } else {
+    # Random Forest Cross-Validation
+    accuracies_best[i] <- cv_random_forest(mushroom, formula_best, k = 10)
+    model_types[i] <- "Random Forest"
+  }
+}
+
+```
+
+```{r}
+# Create a data frame to store results
+results_best <- data.frame(Combination = combination_labels_best, Accuracy = accuracies_best, ModelType = model_types)
+
+# Sort by accuracy in descending order
+sorted_results_best <- results_best[order(-results_best$Accuracy), ]
+
+print(sorted_results_best)
+```
+
+
+
+
+
+
+
+
+Statistical Test for Significance
+```{r}
+
+#Under construction 
+
+dt_accuracy <- best_dt_cv$resample$Accuracy
+rf_accuracy <- best_rf_cv$resample$Accuracy
+
+model_1_accuracy <- sorted_results_best$Accuracy[1]
+model_2_accuracy <- sorted_results_best$Accuracy[2]
+
+# Perform paired t-test
+t_test_results <- t.test(dt_accuracy, rf_accuracy, paired = TRUE)
+
+# Print test results
+print(t_test_results)
+
+```
+
+
+
+
+ 
