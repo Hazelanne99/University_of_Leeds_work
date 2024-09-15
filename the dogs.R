@@ -1029,7 +1029,6 @@ sigma_d = sd(staffy_rehomed)
 
 xbar = mean(staffy_rehomed)
 
-z_test_d = (xbar - 27)/sqrt((sigma_d^2)/n_d)
 
 (z_test_d > w) | (z_test_d < -w)
 
